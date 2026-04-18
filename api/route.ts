@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { resolveLang } from './_lib/lang.js'
 
 /**
  * GET /api/route?fromLat&fromLng&toLat&toLng
@@ -92,7 +93,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  const language = resolveOrsLang(req.query.lang, req.headers['accept-language'])
+  const language = resolveLang(
+    req.query.lang,
+    req.headers['accept-language'],
+    DEFAULT_ORS_LANG,
+    ORS_SUPPORTED_LANGS,
+  )
 
   try {
     const body = {
@@ -172,24 +178,3 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-/**
- * Pick an ORS-supported instruction language from query + Accept-Language.
- * Falls back to English if neither resolves to something ORS recognizes.
- */
-function resolveOrsLang(
-  queryLang: unknown,
-  acceptLanguage: string | string[] | undefined,
-): string {
-  const candidates: string[] = []
-  if (typeof queryLang === 'string' && queryLang.trim()) candidates.push(queryLang)
-  const header = Array.isArray(acceptLanguage) ? acceptLanguage[0] : acceptLanguage
-  if (header) {
-    const first = header.split(',')[0]?.split(';')[0]?.trim()
-    if (first) candidates.push(first)
-  }
-  for (const c of candidates) {
-    const base = c.toLowerCase().split('-')[0]
-    if (ORS_SUPPORTED_LANGS.has(base)) return base
-  }
-  return DEFAULT_ORS_LANG
-}

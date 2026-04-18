@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { resolveLang } from './_lib/lang.js'
 
 /**
  * GET /api/poi?lat=&lng=&radius=&categories=
@@ -23,9 +24,6 @@ const WIKI_TIMEOUT_MS = 8000
 // serverless function limit (10s Hobby). Overpass's own timeout directive
 // (`[timeout:N]`) is set lower to encourage fast fail.
 const OVERPASS_TIMEOUT_MS = 7000
-
-const LANG_CODE_RE = /^[a-z]{2,3}$/
-const DEFAULT_LANG = 'en'
 
 // Overpass main endpoint is frequently overloaded ("Dispatcher_Client timeout").
 // Try mirrors in order until one returns parseable JSON. Kumi Systems is the
@@ -463,28 +461,6 @@ function parseCategories(raw: unknown): Set<Category> {
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(Math.max(n, lo), hi)
-}
-
-/**
- * Resolve a Wikipedia language subdomain from query + Accept-Language,
- * falling back to English. Strips regional subtags (fr-CA → fr).
- */
-function resolveLang(
-  queryLang: unknown,
-  acceptLanguage: string | string[] | undefined,
-): string {
-  const candidates: string[] = []
-  if (typeof queryLang === 'string' && queryLang.trim()) candidates.push(queryLang)
-  const header = Array.isArray(acceptLanguage) ? acceptLanguage[0] : acceptLanguage
-  if (header) {
-    const first = header.split(',')[0]?.split(';')[0]?.trim()
-    if (first) candidates.push(first)
-  }
-  for (const c of candidates) {
-    const base = c.toLowerCase().split('-')[0]
-    if (LANG_CODE_RE.test(base)) return base
-  }
-  return DEFAULT_LANG
 }
 
 function truncateSummary(s: string | null, max = 280): string | null {
