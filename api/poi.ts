@@ -18,7 +18,11 @@ const MILES_TO_METERS = 1609.344
 const WALK_METERS_PER_MINUTE = 80 // ~5 km/h
 const DEDUP_RADIUS_M = 25 // names must also be similar to merge
 const WIKI_TIMEOUT_MS = 8000
-const OVERPASS_TIMEOUT_MS = 12000
+// Overpass mirrors are raced in parallel, so this is the max any single
+// mirror gets before we give up on it. Must stay well under Vercel's
+// serverless function limit (10s Hobby). Overpass's own timeout directive
+// (`[timeout:N]`) is set lower to encourage fast fail.
+const OVERPASS_TIMEOUT_MS = 7000
 
 const LANG_CODE_RE = /^[a-z]{2,3}$/
 const DEFAULT_LANG = 'en'
@@ -249,49 +253,18 @@ async function fetchOverpass(
     .map(({ selector }) => `${selector}(around:${radius},${lat},${lng});`)
     .join('\n  ')
 
-  const query = `[out:json][timeout:${Math.round(OVERPASS_TIMEOUT_MS / 1000)}];
+  // Overpass's own timeout — kept short so a slow mirror gives up server-side
+  // before our per-mirror fetch timeout kills the connection.
+  const query = `[out:json][timeout:5];
 (
   ${unions}
 );
 out center tags 100;`
 
-  type OverpassElement = {
-    type: 'node' | 'way' | 'relation'
-    id: number
-    lat?: number
-    lon?: number
-    center?: { lat: number; lon: number }
-    tags?: Record<string, string>
-  }
-
-  // Try each mirror in order. Overpass instances often return HTML error
-  // pages ("server too busy") at HTTP 200, so we detect JSON-parse failures
-  // explicitly rather than trusting status codes alone.
-  let elements: OverpassElement[] | null = null
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), OVERPASS_TIMEOUT_MS)
-    try {
-      const r = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'User-Agent': UA, 'Content-Type': 'text/plain' },
-        body: query,
-        signal: ctrl.signal,
-      })
-      if (!r.ok) continue
-      const text = await r.text()
-      // Overpass HTML error pages start with "<" — skip them fast.
-      if (text.trimStart().startsWith('<')) continue
-      const parsed = JSON.parse(text) as { elements?: OverpassElement[] }
-      elements = parsed.elements ?? []
-      break
-    } catch {
-      // Timeout, network error, or JSON parse failure — try next mirror.
-      continue
-    } finally {
-      clearTimeout(timer)
-    }
-  }
+  // Race all mirrors in parallel. The first one that returns parseable JSON
+  // wins. Sequential fallback used to blow Vercel's 10s function budget
+  // when a mirror hung — parallelizing keeps worst-case at a single timeout.
+  const elements = await raceOverpass(query)
   if (elements === null) return []
 
   const results = elements
@@ -328,6 +301,62 @@ out center tags 100;`
     .filter((x): x is NonNullable<typeof x> => x !== null)
 
   return results
+}
+
+/**
+ * Fire the query at every Overpass mirror simultaneously and resolve with
+ * the first one that returns real JSON. Returns null if all fail/timeout.
+ *
+ * Why: sequential fallback blew the 10s serverless budget whenever the
+ * first mirror hung. Overpass is chronically flaky — racing costs a bit
+ * of upstream load but makes us resilient to any single mirror being down.
+ */
+async function raceOverpass(
+  query: string,
+): Promise<Array<{
+  type: 'node' | 'way' | 'relation'
+  id: number
+  lat?: number
+  lon?: number
+  center?: { lat: number; lon: number }
+  tags?: Record<string, string>
+}> | null> {
+  type El = {
+    type: 'node' | 'way' | 'relation'
+    id: number
+    lat?: number
+    lon?: number
+    center?: { lat: number; lon: number }
+    tags?: Record<string, string>
+  }
+
+  const attempts = OVERPASS_ENDPOINTS.map(async (endpoint): Promise<El[]> => {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), OVERPASS_TIMEOUT_MS)
+    try {
+      const r = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'User-Agent': UA, 'Content-Type': 'text/plain' },
+        body: query,
+        signal: ctrl.signal,
+      })
+      if (!r.ok) throw new Error(`${endpoint} -> ${r.status}`)
+      const text = await r.text()
+      // Overpass HTML error pages ("server too busy") come back at 200.
+      if (text.trimStart().startsWith('<')) throw new Error('html response')
+      const parsed = JSON.parse(text) as { elements?: El[] }
+      return parsed.elements ?? []
+    } finally {
+      clearTimeout(timer)
+    }
+  })
+
+  try {
+    return await Promise.any(attempts)
+  } catch {
+    // AggregateError — every mirror failed.
+    return null
+  }
 }
 
 function categorizeOsm(tags: Record<string, string>): Category | null {
