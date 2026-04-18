@@ -12,3 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - even-toolkit web components + Even Hub SDK integration stub
 - Vercel serverless function skeleton at `api/health.ts`
 - `app.json` manifest and project structure per Wander build spec
+- **Phase 2a** — `/api/wiki` endpoint: Wikipedia article fetch + 380-char
+  pagination at word boundaries (uses Action API `extracts` instead of
+  the spec's referenced REST `plain` endpoint — that path does not exist)
+- **Phase 2a** — `/api/route` endpoint: OpenRouteService foot-walking
+  proxy with simplified step + geometry output tuned for G2 NAV_ACTIVE
