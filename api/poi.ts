@@ -20,6 +20,9 @@ const DEDUP_RADIUS_M = 25 // names must also be similar to merge
 const WIKI_TIMEOUT_MS = 8000
 const OVERPASS_TIMEOUT_MS = 12000
 
+const LANG_CODE_RE = /^[a-z]{2,3}$/
+const DEFAULT_LANG = 'en'
+
 // Overpass main endpoint is frequently overloaded ("Dispatcher_Client timeout").
 // Try mirrors in order until one returns parseable JSON. Kumi Systems is the
 // go-to community mirror and is generally faster.
@@ -124,6 +127,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
+  const lang = resolveLang(req.query.lang, req.headers['accept-language'])
+
   try {
     const wantsWikiCategories = enabled.has('landmark')
     const wantsOverpass = ALL_CATEGORIES.some(
@@ -131,7 +136,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     )
 
     const [wiki, osm] = await Promise.all([
-      wantsWikiCategories ? fetchWikipedia(lat, lng, radiusM) : Promise.resolve([]),
+      wantsWikiCategories ? fetchWikipedia(lat, lng, radiusM, lang) : Promise.resolve([]),
       wantsOverpass ? fetchOverpass(lat, lng, radiusM, enabled) : Promise.resolve([]),
     ])
 
@@ -142,6 +147,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .slice(0, MAX_RESULTS)
 
     res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=300')
+    res.setHeader('Vary', 'Accept-Language')
     res.status(200).json(merged)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown error'
@@ -155,6 +161,7 @@ async function fetchWikipedia(
   lat: number,
   lng: number,
   radiusM: number,
+  lang: string,
 ): Promise<Omit<Poi, 'distanceMiles' | 'distanceMeters' | 'bearingDegrees' | 'walkMinutes'>[]> {
   // Wikipedia caps geosearch radius at 10000m.
   const safeRadius = Math.min(Math.round(radiusM), 10000)
@@ -172,7 +179,7 @@ async function fetchWikipedia(
     formatversion: '2',
     origin: '*',
   })
-  const url = `https://en.wikipedia.org/w/api.php?${params.toString()}`
+  const url = `https://${lang}.wikipedia.org/w/api.php?${params.toString()}`
 
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), WIKI_TIMEOUT_MS)
@@ -210,7 +217,7 @@ async function fetchWikipedia(
         lng: coord.lon,
         wikiTitle,
         wikiSummary: truncateSummary(p.extract ?? null),
-        websiteUrl: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
+        websiteUrl: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
         source: 'wikipedia' as const,
       }
     })
@@ -427,6 +434,28 @@ function parseCategories(raw: unknown): Set<Category> {
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(Math.max(n, lo), hi)
+}
+
+/**
+ * Resolve a Wikipedia language subdomain from query + Accept-Language,
+ * falling back to English. Strips regional subtags (fr-CA → fr).
+ */
+function resolveLang(
+  queryLang: unknown,
+  acceptLanguage: string | string[] | undefined,
+): string {
+  const candidates: string[] = []
+  if (typeof queryLang === 'string' && queryLang.trim()) candidates.push(queryLang)
+  const header = Array.isArray(acceptLanguage) ? acceptLanguage[0] : acceptLanguage
+  if (header) {
+    const first = header.split(',')[0]?.split(';')[0]?.trim()
+    if (first) candidates.push(first)
+  }
+  for (const c of candidates) {
+    const base = c.toLowerCase().split('-')[0]
+    if (LANG_CODE_RE.test(base)) return base
+  }
+  return DEFAULT_LANG
 }
 
 function truncateSummary(s: string | null, max = 280): string | null {

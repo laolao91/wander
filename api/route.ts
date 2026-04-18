@@ -16,6 +16,15 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 const UA = 'Wander/1.0 (Even Realities G2 companion app; steven.lao30@gmail.com)'
 const FETCH_TIMEOUT_MS = 10000
 
+// Languages ORS supports for turn-by-turn instructions. Anything outside
+// this set falls back to English rather than being rejected upstream.
+// Source: ORS /v2/directions docs — `language` param enum.
+const ORS_SUPPORTED_LANGS = new Set([
+  'en', 'de', 'es', 'fr', 'gr', 'he', 'hu', 'id', 'it', 'ja',
+  'ne', 'nl', 'nb', 'pl', 'pt', 'ro', 'ru', 'tr', 'zh', 'cz',
+])
+const DEFAULT_ORS_LANG = 'en'
+
 type OrsStep = {
   distance: number
   duration: number
@@ -83,6 +92,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
+  const language = resolveOrsLang(req.query.lang, req.headers['accept-language'])
+
   try {
     const body = {
       coordinates: [
@@ -90,7 +101,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         [toLng, toLat],
       ],
       instructions: true,
-      language: 'en',
+      language,
       units: 'm',
       geometry_simplify: false,
     }
@@ -147,14 +158,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const geometry = feature.geometry.coordinates.map(([lng, lat]) => [lat, lng])
 
     res.setHeader('Cache-Control', 'no-store')
+    res.setHeader('Vary', 'Accept-Language')
     res.status(200).json({
       totalDistanceMeters: Math.round(summary.distance),
       totalDurationSeconds: Math.round(summary.duration),
       steps,
       geometry,
+      language,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown error'
     res.status(502).json({ error: 'Route fetch failed', detail: msg })
   }
+}
+
+/**
+ * Pick an ORS-supported instruction language from query + Accept-Language.
+ * Falls back to English if neither resolves to something ORS recognizes.
+ */
+function resolveOrsLang(
+  queryLang: unknown,
+  acceptLanguage: string | string[] | undefined,
+): string {
+  const candidates: string[] = []
+  if (typeof queryLang === 'string' && queryLang.trim()) candidates.push(queryLang)
+  const header = Array.isArray(acceptLanguage) ? acceptLanguage[0] : acceptLanguage
+  if (header) {
+    const first = header.split(',')[0]?.split(';')[0]?.trim()
+    if (first) candidates.push(first)
+  }
+  for (const c of candidates) {
+    const base = c.toLowerCase().split('-')[0]
+    if (ORS_SUPPORTED_LANGS.has(base)) return base
+  }
+  return DEFAULT_ORS_LANG
 }

@@ -22,3 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deduped, distance-sorted, category-filtered POI list. Dedupe uses
   a 25m radius + name similarity so nearby distinct businesses aren't
   collapsed (tightened from spec's 20m). Wikipedia preferred on ties.
+- **Phase 2b** — Overpass mirror fallback: tries Kumi Systems → main →
+  private.coffee, with HTML-at-200 detection for the common "server
+  too busy" error that previously silently dropped all OSM results.
+- **Phase 2c** — Localization across all three public endpoints:
+  accept `?lang=` query param, fall back to `Accept-Language` header,
+  default to `en`. `/api/wiki` and `/api/poi` route Wikipedia calls
+  to the matching language subdomain; `/api/route` passes the locale
+  through to ORS for localized walking instructions (falls back to
+  English for languages ORS doesn't support). Regional subtags like
+  `fr-CA` are stripped to the base code. All responses set
+  `Vary: Accept-Language` so edge caches don't cross-contaminate.

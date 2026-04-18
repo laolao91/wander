@@ -16,6 +16,12 @@ const UA = 'Wander/1.0 (Even Realities G2 companion app; steven.lao30@gmail.com)
 const PAGE_SIZE_CHARS = 380
 const FETCH_TIMEOUT_MS = 8000
 
+// Wikipedia subdomains are ISO 639-1 base codes (en, fr, ja, zh, ...).
+// We accept regional tags like "fr-CA" from Accept-Language but strip to
+// the base. Validated against a whitelist-ish regex to prevent host injection.
+const LANG_CODE_RE = /^[a-z]{2,3}$/
+const DEFAULT_LANG = 'en'
+
 type SummaryApiResponse = {
   title?: string
   extract?: string
@@ -32,25 +38,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
+  const lang = resolveLang(req.query.lang, req.headers['accept-language'])
+
   try {
     const [summary, pages] = await Promise.all([
-      fetchSummary(title),
-      fetchFullExtract(title),
+      fetchSummary(title, lang),
+      fetchFullExtract(title, lang),
     ])
 
     if (!pages) {
-      res.status(404).json({ error: 'Article not found', title })
+      res.status(404).json({ error: 'Article not found', title, lang })
       return
     }
 
     // Short cache — Wikipedia content is stable enough and the glasses app
-    // rereads this on every "Read More" tap.
+    // rereads this on every "Read More" tap. Vary by language so cached
+    // English doesn't bleed into a French request.
     res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=86400')
+    res.setHeader('Vary', 'Accept-Language')
     res.status(200).json({
       title: summary?.title ?? title.replace(/_/g, ' '),
       summary: summary?.extract ?? pages[0] ?? '',
       pages,
       totalPages: pages.length,
+      lang,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown error'
@@ -58,14 +69,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-async function fetchSummary(title: string): Promise<SummaryApiResponse | null> {
-  const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`
+/**
+ * Resolve the Wikipedia language subdomain. Query param wins; falls back to
+ * the Accept-Language header's first tag; defaults to English. Regional
+ * subtags (fr-CA) are stripped to the base (fr). Unknown/malformed values
+ * fall back to `en` rather than attempting the request against a bogus host.
+ */
+export function resolveLang(
+  queryLang: unknown,
+  acceptLanguage: string | string[] | undefined,
+): string {
+  const candidates: string[] = []
+  if (typeof queryLang === 'string' && queryLang.trim()) candidates.push(queryLang)
+  const header = Array.isArray(acceptLanguage) ? acceptLanguage[0] : acceptLanguage
+  if (header) {
+    // Take only the first language tag, ignore q-weights.
+    const first = header.split(',')[0]?.split(';')[0]?.trim()
+    if (first) candidates.push(first)
+  }
+  for (const c of candidates) {
+    const base = c.toLowerCase().split('-')[0]
+    if (LANG_CODE_RE.test(base)) return base
+  }
+  return DEFAULT_LANG
+}
+
+async function fetchSummary(title: string, lang: string): Promise<SummaryApiResponse | null> {
+  const url = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`
   const r = await fetchWithTimeout(url)
   if (!r.ok) return null
   return (await r.json()) as SummaryApiResponse
 }
 
-async function fetchFullExtract(title: string): Promise<string[] | null> {
+async function fetchFullExtract(title: string, lang: string): Promise<string[] | null> {
   const params = new URLSearchParams({
     action: 'query',
     prop: 'extracts',
@@ -77,7 +113,7 @@ async function fetchFullExtract(title: string): Promise<string[] | null> {
     titles: title,
     origin: '*',
   })
-  const url = `https://en.wikipedia.org/w/api.php?${params.toString()}`
+  const url = `https://${lang}.wikipedia.org/w/api.php?${params.toString()}`
   const r = await fetchWithTimeout(url)
   if (!r.ok) return null
 
