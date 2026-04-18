@@ -1,0 +1,19 @@
+@import "tailwindcss";
+@import "even-toolkit/web/theme-light.css";
+@import "even-toolkit/web/typography.css";
+@import "even-toolkit/web/utilities.css";
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: "FK Grotesk Neue", system-ui, -apple-system, "SF Pro Text", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

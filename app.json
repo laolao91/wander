@@ -1,0 +1,15 @@
+{
+  "package_id": "com.stevenlao.wander",
+  "edition": "202601",
+  "name": "Wander",
+  "version": "1.0.0",
+  "min_app_version": "0.1.0",
+  "tagline": "Discover what's around you",
+  "description": "Wander shows you what's nearby — landmarks, parks, museums, restaurants, and hidden gems — ranked by how close they are. Tap anything to get Wikipedia context and walking directions, all on your G2 glasses without touching your phone.",
+  "author": "Steven Lao",
+  "entrypoint": "index.html",
+  "permissions": {
+    "network": ["wander-laolao91.vercel.app"],
+    "location": true
+  }
+}

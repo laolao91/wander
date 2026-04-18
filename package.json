@@ -1,0 +1,40 @@
+{
+  "name": "wander",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Point-of-interest discovery and walking navigation for Even Realities G2 smart glasses.",
+  "author": "Steven Lao",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --port 5173",
+    "typecheck": "tsc -b --noEmit",
+    "qr": "evenhub qr --http --port 5173",
+    "simulator": "evenhub-simulator http://localhost:5173",
+    "pack": "npm run build && evenhub pack app.json dist -o wander.ehpk"
+  },
+  "dependencies": {
+    "@evenrealities/even_hub_sdk": "^0.0.10",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "even-toolkit": "^1.7.2",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "react-router": "^7.9.0",
+    "tailwind-merge": "^2.6.0"
+  },
+  "devDependencies": {
+    "@evenrealities/evenhub-cli": "^0.1.12",
+    "@evenrealities/evenhub-simulator": "^0.7.2",
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vercel/node": "^5.7.11",
+    "@vitejs/plugin-react": "^6.0.1",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.8"
+  }
+}
