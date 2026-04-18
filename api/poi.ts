@@ -20,6 +20,15 @@ const DEDUP_RADIUS_M = 25 // names must also be similar to merge
 const WIKI_TIMEOUT_MS = 8000
 const OVERPASS_TIMEOUT_MS = 12000
 
+// Overpass main endpoint is frequently overloaded ("Dispatcher_Client timeout").
+// Try mirrors in order until one returns parseable JSON. Kumi Systems is the
+// go-to community mirror and is generally faster.
+const OVERPASS_ENDPOINTS = [
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+]
+
 type Category =
   | 'landmark'
   | 'park'
@@ -239,25 +248,6 @@ async function fetchOverpass(
 );
 out center tags 100;`
 
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), OVERPASS_TIMEOUT_MS)
-  let r: Response
-  try {
-    r = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      headers: { 'User-Agent': UA, 'Content-Type': 'text/plain' },
-      body: query,
-      signal: ctrl.signal,
-    })
-  } catch {
-    // Overpass is often flaky. Treat a full failure as "no OSM results"
-    // rather than failing the whole endpoint.
-    return []
-  } finally {
-    clearTimeout(timer)
-  }
-  if (!r.ok) return []
-
   type OverpassElement = {
     type: 'node' | 'way' | 'relation'
     id: number
@@ -266,8 +256,36 @@ out center tags 100;`
     center?: { lat: number; lon: number }
     tags?: Record<string, string>
   }
-  const data = (await r.json()) as { elements?: OverpassElement[] }
-  const elements = data.elements ?? []
+
+  // Try each mirror in order. Overpass instances often return HTML error
+  // pages ("server too busy") at HTTP 200, so we detect JSON-parse failures
+  // explicitly rather than trusting status codes alone.
+  let elements: OverpassElement[] | null = null
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), OVERPASS_TIMEOUT_MS)
+    try {
+      const r = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'User-Agent': UA, 'Content-Type': 'text/plain' },
+        body: query,
+        signal: ctrl.signal,
+      })
+      if (!r.ok) continue
+      const text = await r.text()
+      // Overpass HTML error pages start with "<" — skip them fast.
+      if (text.trimStart().startsWith('<')) continue
+      const parsed = JSON.parse(text) as { elements?: OverpassElement[] }
+      elements = parsed.elements ?? []
+      break
+    } catch {
+      // Timeout, network error, or JSON parse failure — try next mirror.
+      continue
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  if (elements === null) return []
 
   const results = elements
     .map((el) => {
