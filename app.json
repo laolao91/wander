@@ -9,7 +9,7 @@
   "author": "Steven Lao",
   "entrypoint": "index.html",
   "permissions": {
-    "network": ["wander-laolao91s-projects.vercel.app"],
+    "network": ["wander-six-phi.vercel.app"],
     "location": true
   }
 }
