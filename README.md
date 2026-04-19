@@ -1,8 +1,8 @@
 # Wander
 
-**Discover what's around you — on your EvenRealities G2 glasses.**
+**Your city, explained — hands-free on your EvenRealities G2 glasses.**
 
-Wander surfaces nearby landmarks, parks, museums, and restaurants ranked by walking distance. Tap any spot for a Wikipedia summary and turn-by-turn walking directions, all hands-free on your G2 display.
+Wander turns any walk into a guided exploration. It detects what's around you, tells you what it is, and walks you there — all without touching your phone. Point of interest discovery, Wikipedia context, and turn-by-turn navigation, rendered directly on your G2 display.
 
 ---
 
@@ -18,19 +18,75 @@ Scan this QR code with the EvenHub app to load Wander directly on your G2:
 
 ---
 
+## What Wander Does
+
+You open it. It finds your location and shows you a ranked list of what's nearby — landmarks, parks, museums, restaurants, hidden historical gems. You scroll through the list on your glasses, tap anything to learn more, and tap again to start walking there.
+
+No phone in your hand. No map to stare at. Just your surroundings, annotated.
+
+---
+
+## Use Cases
+
+**Exploring a new city**
+Land in an unfamiliar neighborhood and instantly see what's within walking distance, with Wikipedia context for everything you pass. Wander is built for the curious traveler who wants to understand a place, not just photograph it.
+
+**Walking tours, self-guided**
+Stroll through a historic district and let Wander surface the stories behind the buildings you're already looking at. Tap anything for a full Wikipedia article. Navigate to the next stop without pulling out your phone.
+
+**Daily commute detours**
+Find out what's on that block you walk past every day. Wander refreshes its POI list in the background every 5 minutes, so if you take a different route, results update automatically.
+
+**Traveling without a guide**
+Wander works in any language. Change the display language and all Wikipedia summaries, walking instructions, and POI names localize automatically — useful anywhere in the world where English isn't the default.
+
+---
+
 ## Features
 
-- **POI Discovery** — merges Wikipedia GeoSearch and OpenStreetMap into a single distance-sorted list, deduped at 25m radius
-- **Walking Directions** — turn-by-turn navigation via OpenRouteService with a live canvas minimap on the glasses display
-- **Wikipedia Reader** — paginated article summaries rendered directly on the G2, 380 characters per page
-- **Background Refresh** — POI list silently refreshes every 5 minutes so results stay current while you explore
-- **Localization** — all three API endpoints respect `?lang=` and `Accept-Language` for non-English speakers
+**📍 Nearby Discovery**
+Wander merges Wikipedia GeoSearch and OpenStreetMap into a single list, sorted by walking distance. Landmarks, parks, transit hubs, restaurants, cafes — up to 20 results, deduped so you never see the same place twice.
+
+**🗺️ Turn-by-Turn Navigation**
+Select any POI and get walking directions on your glasses. A live minimap in the corner of the display shows your position relative to the route, updating as you move.
+
+**📖 Wikipedia On-Glasses**
+Every landmark and point of interest links to its Wikipedia article. Wander paginates the text into readable chunks so you can flip through it with a scroll gesture, without pulling out your phone.
+
+**🔄 Background Refresh**
+The POI list updates silently every 5 minutes. If you're mid-detail on a POI when the refresh lands, Wander holds the new list and applies it when you navigate back — so your reading is never interrupted.
+
+**🌍 Multilingual**
+Set your preferred language and Wander routes all Wikipedia content, walking instructions, and place names to the matching locale. Supports any language Wikipedia covers.
+
+**⚡ Fully Hands-Free**
+Three gestures cover everything: scroll up, scroll down, tap. Double-tap goes back. The entire app is navigable without touching your phone after launch.
+
+---
+
+## How It Works
+
+```
+Your location (GPS)
+        ↓
+  /api/poi — Wikipedia GeoSearch + OpenStreetMap, merged & ranked
+        ↓
+  POI_LIST on your G2 — scroll to browse
+        ↓
+  Tap a POI → POI_DETAIL — summary, distance, action menu
+        ↓
+  Navigate → /api/route (OpenRouteService)
+        ↓
+  NAV_ACTIVE — step instructions + live canvas minimap
+```
+
+Wikipedia articles load via `/api/wiki` and are paginated at word boundaries so nothing gets cut off mid-sentence.
 
 ---
 
 ## Glasses UX
 
-Eight screens managed by a pure reducer (`reduce(state, event) → { state, effects[] }`):
+Eight screens, three gestures:
 
 | Screen | What you see |
 |---|---|
