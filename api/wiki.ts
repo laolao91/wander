@@ -113,7 +113,7 @@ async function fetchFullExtract(title: string, lang: string): Promise<string[] |
  * Strip cruft the Wikipedia extracts API occasionally leaves behind
  * (reference markers, empty section headers, orphan whitespace).
  */
-function cleanText(raw: string): string {
+export function cleanText(raw: string): string {
   return raw
     .replace(/\[\d+\]/g, '')
     .replace(/\r\n/g, '\n')
@@ -129,7 +129,7 @@ function cleanText(raw: string): string {
  * Split text into pages of at most `size` characters, breaking at word
  * boundaries so the G2 display doesn't cut a word in half.
  */
-function paginate(text: string, size: number): string[] {
+export function paginate(text: string, size: number): string[] {
   if (text.length <= size) return [text]
   const pages: string[] = []
   let cursor = 0
