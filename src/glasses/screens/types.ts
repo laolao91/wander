@@ -19,6 +19,7 @@ export type ScreenName =
   | 'ERROR_LOCATION'
   | 'ERROR_NETWORK'
   | 'ERROR_EMPTY'
+  | 'CONFIRM_EXIT'
 
 /** "What is the glasses display showing?" — the only screen-shaped state. */
 export type Screen =
@@ -30,6 +31,7 @@ export type Screen =
   | ErrorLocationScreen
   | ErrorNetworkScreen
   | ErrorEmptyScreen
+  | ConfirmExitScreen
 
 export interface LoadingScreen {
   name: 'LOADING'
@@ -39,6 +41,8 @@ export interface LoadingScreen {
 export interface PoiListScreen {
   name: 'POI_LIST'
   pois: Poi[]
+  /** Highlight cursor — used as the tap target when the SDK doesn't pass an itemIndex. */
+  cursorIndex?: number
 }
 
 /**
@@ -97,6 +101,15 @@ export interface ErrorEmptyScreen {
   filtersAreNarrow: boolean
 }
 
+/** Two-button "exit Wander?" prompt shown before shutdown. */
+export interface ConfirmExitScreen {
+  name: 'CONFIRM_EXIT'
+  /** The screen we'd return to if the user picks "No". */
+  returnTo: Screen
+  /** 0 = "No, keep exploring" (default, safer), 1 = "Yes, exit". */
+  cursorIndex: number
+}
+
 // ─── Settings (kept on AppState, surfaced into POI fetches) ────────────
 
 export interface Settings {
@@ -125,12 +138,14 @@ export const ALLOWED_TRANSITIONS: Record<ScreenName, ReadonlySet<ScreenName>> = 
     'ERROR_LOCATION',
     'ERROR_NETWORK',
     'ERROR_EMPTY',
+    'CONFIRM_EXIT',
   ]),
   POI_LIST: new Set([
     'POI_DETAIL',
     'LOADING', // refresh
     'ERROR_NETWORK',
     'ERROR_EMPTY',
+    'CONFIRM_EXIT',
   ]),
   POI_DETAIL: new Set([
     'POI_LIST', // back
@@ -147,9 +162,18 @@ export const ALLOWED_TRANSITIONS: Record<ScreenName, ReadonlySet<ScreenName>> = 
   WIKI_READ: new Set([
     'POI_DETAIL', // tap or scroll-top from page 0
   ]),
-  ERROR_LOCATION: new Set(['LOADING', 'POI_LIST']),
+  ERROR_LOCATION: new Set(['LOADING', 'POI_LIST', 'CONFIRM_EXIT']),
   ERROR_NETWORK: new Set(['LOADING', 'POI_LIST', 'POI_DETAIL']),
-  ERROR_EMPTY: new Set(['LOADING', 'POI_LIST']),
+  ERROR_EMPTY: new Set(['LOADING', 'POI_LIST', 'CONFIRM_EXIT']),
+  // CONFIRM_EXIT can return to any top-level screen (returnTo), or the
+  // bridge intercepts "yes" and shuts down the page container before the
+  // reducer ever runs.
+  CONFIRM_EXIT: new Set([
+    'POI_LIST',
+    'LOADING',
+    'ERROR_LOCATION',
+    'ERROR_EMPTY',
+  ]),
 }
 
 export function canTransition(from: ScreenName, to: ScreenName): boolean {

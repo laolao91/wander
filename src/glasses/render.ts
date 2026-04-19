@@ -54,10 +54,27 @@ const RULE = '━'.repeat(40)
 export function renderScreen(screen: Screen): RebuildPageContainer {
   switch (screen.name) {
     case 'LOADING':
-      return singleText(centeredBlock(['', 'WANDER', RULE, '', screen.message]))
+      return singleText(
+        centeredBlock(['', '', 'WANDER', '', '', screen.message]),
+      )
 
     case 'POI_LIST':
-      return renderPoiList(screen.pois)
+      return renderPoiList(screen.pois, screen.cursorIndex ?? 0)
+
+    case 'CONFIRM_EXIT':
+      return singleText(
+        centeredBlock([
+          '',
+          'Exit Wander?',
+          '',
+          '',
+          screen.cursorIndex === 1 ? '  No, keep exploring' : '> No, keep exploring',
+          screen.cursorIndex === 1 ? '> Yes, exit' : '  Yes, exit',
+          '',
+          '',
+          'Tap to confirm  ·  scroll to switch',
+        ]),
+      )
 
     case 'POI_DETAIL':
       return renderPoiDetail(screen.poi, screen.actions, screen.cursorIndex)
@@ -154,8 +171,8 @@ export function renderInPlaceUpdate(screen: Screen): TextContainerUpgrade | null
 
 // ─── Per-screen renderers ──────────────────────────────────────────────
 
-function renderPoiList(pois: Poi[]): RebuildPageContainer {
-  const items = pois.slice(0, 20).map(poiListLine)
+function renderPoiList(pois: Poi[], cursorIndex: number): RebuildPageContainer {
+  const items = pois.slice(0, 20).map((p, i) => poiListLine(p, i === cursorIndex))
   return new RebuildPageContainer({
     containerTotalNum: 1,
     listObject: [
@@ -182,13 +199,14 @@ function renderPoiList(pois: Poi[]): RebuildPageContainer {
   })
 }
 
-function poiListLine(p: Poi): string {
-  // "★ Central Park Reservoir          0.3 mi"
+function poiListLine(p: Poi, isCursor: boolean): string {
+  // Two lines per item — name on top, distance + walk time below (left-
+  // aligned). G2 fonts aren't monospace so true right-alignment via space
+  // padding looks ragged; stacking is cleaner and easier to read.
+  const cursor = isCursor ? '> ' : '  '
+  const name = truncate(p.name, 50)
   const distance = formatDistance(p.distanceMiles)
-  const name = truncate(p.name, 44)
-  // Pad name out so distance right-aligns (approx — no fixed-width math).
-  const middlePad = ' '.repeat(Math.max(2, 50 - name.length))
-  return `${p.categoryIcon} ${name}${middlePad}${distance}`
+  return `${cursor}${p.categoryIcon} ${name}\n     ${distance}  ·  ~${p.walkMinutes} min`
 }
 
 function renderPoiDetail(

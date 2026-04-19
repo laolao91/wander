@@ -91,7 +91,7 @@ describe('translateGlassesEvent — listEvent', () => {
     expect(dispatch).toHaveBeenNthCalledWith(2, { type: 'cursor-down' })
   })
 
-  it('DOUBLE_CLICK on the list shuts the app down', () => {
+  it('DOUBLE_CLICK on the list dispatches request-exit (confirmation prompt)', () => {
     const dispatch = vi.fn<(e: Event) => void>()
     const bridge = makeBridge()
     translateGlassesEvent(
@@ -100,8 +100,8 @@ describe('translateGlassesEvent — listEvent', () => {
       dispatch,
       bridge,
     )
-    expect(dispatch).not.toHaveBeenCalled()
-    expect(bridge.shutDownPageContainer).toHaveBeenCalledWith(0)
+    expect(dispatch).toHaveBeenCalledWith({ type: 'request-exit' })
+    expect(bridge.shutDownPageContainer).not.toHaveBeenCalled()
   })
 })
 
@@ -148,7 +148,7 @@ describe('translateGlassesEvent — text/sys events', () => {
     expect(bridge.shutDownPageContainer).not.toHaveBeenCalled()
   })
 
-  it('DOUBLE_CLICK on a top-level screen exits', () => {
+  it('DOUBLE_CLICK on a top-level screen surfaces the exit prompt', () => {
     const dispatch = vi.fn<(e: Event) => void>()
     const bridge = makeBridge()
     translateGlassesEvent(
@@ -157,7 +157,8 @@ describe('translateGlassesEvent — text/sys events', () => {
       dispatch,
       bridge,
     )
-    expect(bridge.shutDownPageContainer).toHaveBeenCalledWith(0)
+    expect(dispatch).toHaveBeenCalledWith({ type: 'request-exit' })
+    expect(bridge.shutDownPageContainer).not.toHaveBeenCalled()
   })
 
   it('ignores events with no payload', () => {

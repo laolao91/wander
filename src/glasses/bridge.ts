@@ -44,6 +44,7 @@ export async function initGlasses(): Promise<void> {
   const runner = new EffectRunner({
     dispatch: (event) => dispatch(event),
     getSettings: () => state.settings,
+    exitApp: () => void bridge.shutDownPageContainer(0),
   })
 
   // Boot screen — the LOADING screen rendered by renderScreen.
@@ -165,7 +166,10 @@ export function translateGlassesEvent(
   evt: EvenHubEvent,
   state: AppState,
   dispatch: (e: Event) => void,
-  bridge: Pick<EvenAppBridge, 'shutDownPageContainer'>,
+  // Kept in the signature for callers/tests; the bridge no longer needs
+  // to call shutDownPageContainer directly (exit flows through the
+  // CONFIRM_EXIT screen + 'exit-app' effect now).
+  _bridge?: Pick<EvenAppBridge, 'shutDownPageContainer'>,
 ): void {
   // List events come from POI_LIST (or any future list screen). They
   // carry the selected item index, which the reducer needs for `tap`.
@@ -182,8 +186,10 @@ export function translateGlassesEvent(
         dispatch({ type: 'cursor-down' })
         return
       case OsEventTypeList.DOUBLE_CLICK_EVENT:
-        // From the list, double-click means exit the app.
-        void bridge.shutDownPageContainer(0)
+        // From the list, double-click surfaces the exit confirmation
+        // (the reducer transitions to CONFIRM_EXIT, the runner's
+        // 'exit-app' effect is what actually shuts the app down).
+        dispatch({ type: 'request-exit' })
         return
     }
     return
@@ -209,10 +215,11 @@ export function translateGlassesEvent(
       return
 
     case OsEventTypeList.DOUBLE_CLICK_EVENT:
-      // Double-click maps to "back" on screens we can back out of, and
-      // "exit" on top-level screens (per spec §10).
+      // Double-click surfaces an exit prompt on top-level screens (so a
+      // single missed tap doesn't close the app); on inner screens it
+      // navigates back.
       if (isTopLevelScreen(state.screen.name)) {
-        void bridge.shutDownPageContainer(0)
+        dispatch({ type: 'request-exit' })
       } else {
         dispatch({ type: 'back' })
       }

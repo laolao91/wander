@@ -28,6 +28,8 @@ export interface EffectRunnerDeps {
   watchPosition?: (
     onPosition: (lat: number, lng: number) => void,
   ) => () => void
+  /** Tear down the page container and exit the app (CONFIRM_EXIT → "Yes"). */
+  exitApp?: () => void
 }
 
 export class EffectRunner {
@@ -41,6 +43,7 @@ export class EffectRunner {
       geolocate: deps.geolocate ?? defaultGeolocate,
       openUrl: deps.openUrl ?? defaultOpenUrl,
       watchPosition: deps.watchPosition ?? defaultWatchPosition,
+      exitApp: deps.exitApp ?? (() => {}),
     }
   }
 
@@ -68,6 +71,9 @@ export class EffectRunner {
         return
       case 'stop-nav-watch':
         this.stopNavWatch()
+        return
+      case 'exit-app':
+        this.deps.exitApp()
         return
     }
   }

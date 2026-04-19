@@ -66,6 +66,7 @@ export type Event =
   | { type: 'back' }
   | { type: 'cursor-up' }
   | { type: 'cursor-down' }
+  | { type: 'request-exit' } // bridge dispatches on double-tap from top-level
   // System events
   | { type: 'pois-loaded'; pois: Poi[]; isBackgroundRefresh: boolean }
   | { type: 'pois-failed'; reason: 'location' | 'network' | 'empty' }
@@ -88,6 +89,7 @@ export type Effect =
   | { type: 'open-url'; url: string }
   | { type: 'start-nav-watch' }
   | { type: 'stop-nav-watch' }
+  | { type: 'exit-app' }
 
 export interface ReducerResult {
   state: AppState
@@ -147,7 +149,16 @@ export function reduce(state: AppState, event: Event): ReducerResult {
 
     case 'cursor-down':
       return onCursorMove(state, +1)
+
+    case 'request-exit':
+      return onRequestExit(state)
   }
+}
+
+function onRequestExit(state: AppState): ReducerResult {
+  // Don't stack confirms.
+  if (state.screen.name === 'CONFIRM_EXIT') return noop(state)
+  return next(state, { name: 'CONFIRM_EXIT', returnTo: state.screen, cursorIndex: 0 })
 }
 
 // ─── Per-event handlers ────────────────────────────────────────────────
@@ -172,7 +183,7 @@ function onPoisLoaded(
 
   return next(
     { ...state, poiList: pois, pendingPoiRefresh: null },
-    { name: 'POI_LIST', pois },
+    { name: 'POI_LIST', pois, cursorIndex: 0 },
   )
 }
 
@@ -240,8 +251,11 @@ function onRetry(state: AppState): ReducerResult {
 function onTap(state: AppState, itemIndex?: number): ReducerResult {
   switch (state.screen.name) {
     case 'POI_LIST': {
-      if (itemIndex == null) return noop(state)
-      const poi = state.screen.pois[itemIndex]
+      // SDK passes itemIndex on listEvent CLICK; on real glasses the
+      // event sometimes lands as a textEvent/sysEvent with no index, so
+      // fall back to our tracked cursor.
+      const idx = itemIndex ?? state.screen.cursorIndex ?? 0
+      const poi = state.screen.pois[idx]
       if (!poi) return noop(state)
       return next(state, {
         name: 'POI_DETAIL',
@@ -279,6 +293,13 @@ function onTap(state: AppState, itemIndex?: number): ReducerResult {
         [{ type: 'stop-nav-watch' }],
       )
 
+    case 'CONFIRM_EXIT':
+      // cursor 0 = "No, keep exploring", cursor 1 = "Yes, exit"
+      if (state.screen.cursorIndex === 1) {
+        return { state, effects: [{ type: 'exit-app' }] }
+      }
+      return next(state, state.screen.returnTo)
+
     case 'LOADING':
     case 'ERROR_LOCATION':
     case 'ERROR_NETWORK':
@@ -300,22 +321,40 @@ function onBack(state: AppState): ReducerResult {
         effects: [{ type: 'stop-nav-watch' }],
       }
 
+    case 'CONFIRM_EXIT':
+      // Back from confirm = "No" — go back to where we came from.
+      return next(state, state.screen.returnTo)
+
     case 'POI_LIST':
     case 'LOADING':
     case 'ERROR_LOCATION':
     case 'ERROR_EMPTY':
-      // Top-level screens — back is a no-op for the reducer; the bridge
-      // interprets this as "exit app" via shutDownPageContainer.
+      // Top-level — bridge routes back/double-tap through `request-exit`
+      // to surface the confirm-exit prompt instead.
       return noop(state)
   }
 }
 
 function onCursorMove(state: AppState, delta: number): ReducerResult {
-  if (state.screen.name !== 'POI_DETAIL') return noop(state)
-  const max = state.screen.actions.length - 1
-  const nextIndex = clamp(state.screen.cursorIndex + delta, 0, max)
-  if (nextIndex === state.screen.cursorIndex) return noop(state)
-  return next(state, { ...state.screen, cursorIndex: nextIndex })
+  if (state.screen.name === 'POI_DETAIL') {
+    const max = state.screen.actions.length - 1
+    const nextIndex = clamp(state.screen.cursorIndex + delta, 0, max)
+    if (nextIndex === state.screen.cursorIndex) return noop(state)
+    return next(state, { ...state.screen, cursorIndex: nextIndex })
+  }
+  if (state.screen.name === 'POI_LIST') {
+    const max = state.screen.pois.length - 1
+    const cur = state.screen.cursorIndex ?? 0
+    const nextIndex = clamp(cur + delta, 0, max)
+    if (nextIndex === cur) return noop(state)
+    return next(state, { ...state.screen, cursorIndex: nextIndex })
+  }
+  if (state.screen.name === 'CONFIRM_EXIT') {
+    const nextIndex = clamp(state.screen.cursorIndex + delta, 0, 1)
+    if (nextIndex === state.screen.cursorIndex) return noop(state)
+    return next(state, { ...state.screen, cursorIndex: nextIndex })
+  }
+  return noop(state)
 }
 
 function executePoiDetailAction(
@@ -368,7 +407,7 @@ function applyPendingRefresh(state: AppState): ReducerResult {
   const pois = state.pendingPoiRefresh ?? state.poiList
   return next(
     { ...state, poiList: pois, pendingPoiRefresh: null },
-    { name: 'POI_LIST', pois },
+    { name: 'POI_LIST', pois, cursorIndex: 0 },
   )
 }
 
