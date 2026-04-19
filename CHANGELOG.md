@@ -80,3 +80,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     9 for bridge translation, on top of the existing 21 reducer +
     18 API tests. Build is clean; only the simulator smoke test
     remains for the user.
+- **Phase 4** — NAV_ACTIVE minimap (canvas → PNG → SDK image container):
+  - `src/glasses/minimap.ts` — pure geometry helpers (`fitBounds`,
+    `projectPoint` with equirectangular cos(lat) correction,
+    `dashSegments`, `trianglePath`, `bearingBetween`) plus the
+    DOM-only `drawMinimap`/`encodeMinimapPng` that paint a 240×120
+    canvas and return PNG bytes. Image format is PNG — the host owns
+    the gray4 conversion (the SDK exposes the failure mode as
+    `ImageRawDataUpdateResult.imageToGray4Failed`).
+  - `src/glasses/render.ts` — NAV_ACTIVE expanded to a 3-container
+    layout: header text on top, body text in the left column (336px),
+    minimap image on the right (240×120, vertically centred). Body
+    text wraps at the narrower 38-char width.
+  - `src/glasses/bridge.ts` — after every NAV_ACTIVE rebuild or
+    in-place update, encode the minimap to PNG and push it via
+    `updateImageRawData`. Failures log a warning instead of derailing
+    nav (the text body is still useful on its own).
+  - 17 new tests (122 total): bbox sizing, projection direction
+    (north=up, padding respected), dash math along straight lines and
+    L-shapes, triangle orientation for all 4 cardinals, bearing math
+    for due-N/E. Canvas drawing tested by the simulator, not in unit
+    tests (skipped DOM environment to keep tests fast).

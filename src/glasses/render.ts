@@ -9,6 +9,7 @@
  */
 
 import {
+  ImageContainerProperty,
   ListContainerProperty,
   ListItemContainerProperty,
   RebuildPageContainer,
@@ -17,6 +18,7 @@ import {
 } from '@evenrealities/even_hub_sdk'
 import type { Poi } from './api'
 import type { Screen, PoiDetailAction } from './screens/types'
+import { MINIMAP_HEIGHT, MINIMAP_WIDTH } from './minimap'
 
 // ─── Display constants (G2 hardware) ───────────────────────────────────
 
@@ -28,11 +30,22 @@ const BODY_HEIGHT = DISPLAY_HEIGHT - HEADER_HEIGHT
 
 /** Approx char width at the G2's standard font; used for centering math. */
 const CHARS_PER_LINE = 65
+/** NAV_ACTIVE body is the narrower left column (≈58% of full width). */
+const NAV_BODY_CHARS_PER_LINE = 38
 
 // Container IDs — stable across rebuilds so textContainerUpgrade can target.
 export const ID_MAIN = 1
 export const ID_BODY = 2
 export const ID_LIST = 3
+/** NAV_ACTIVE only — the minimap image container. */
+export const ID_MAP = 4
+
+// NAV_ACTIVE two-column layout: text on the left, minimap on the right.
+const NAV_TEXT_WIDTH = DISPLAY_WIDTH - MINIMAP_WIDTH // 336
+const NAV_MAP_X = NAV_TEXT_WIDTH // 336
+// Vertically centre the map inside the body area (8px above the rule
+// the simulator screenshots show, 8px below the bottom hint).
+const NAV_MAP_Y = BODY_Y + Math.floor((BODY_HEIGHT - MINIMAP_HEIGHT) / 2)
 
 const RULE = '━'.repeat(40)
 
@@ -251,8 +264,11 @@ const ACTION_LABEL: Record<PoiDetailAction, string> = {
 function renderNavActive(
   screen: Extract<Screen, { name: 'NAV_ACTIVE' }>,
 ): RebuildPageContainer {
+  // 3 containers: header text + (left-column) body text + (right-column)
+  // minimap image. The image starts as a placeholder — the bridge fills
+  // it in via `updateImageRawData` right after the rebuild lands.
   return new RebuildPageContainer({
-    containerTotalNum: 2,
+    containerTotalNum: 3,
     textObject: [
       new TextContainerProperty({
         xPosition: 0,
@@ -271,7 +287,7 @@ function renderNavActive(
       new TextContainerProperty({
         xPosition: 0,
         yPosition: BODY_Y,
-        width: DISPLAY_WIDTH,
+        width: NAV_TEXT_WIDTH,
         height: BODY_HEIGHT,
         borderWidth: 0,
         borderColor: 5,
@@ -281,6 +297,16 @@ function renderNavActive(
         containerName: 'nav-body',
         isEventCapture: 1,
         content: navBodyText(screen),
+      }),
+    ],
+    imageObject: [
+      new ImageContainerProperty({
+        xPosition: NAV_MAP_X,
+        yPosition: NAV_MAP_Y,
+        width: MINIMAP_WIDTH,
+        height: MINIMAP_HEIGHT,
+        containerID: ID_MAP,
+        containerName: 'nav-minimap',
       }),
     ],
   })
@@ -297,7 +323,7 @@ function navBodyText(screen: Extract<Screen, { name: 'NAV_ACTIVE' }>): string {
       'You have arrived!',
       RULE,
       '',
-      truncate(screen.destination.name, CHARS_PER_LINE),
+      truncate(screen.destination.name, NAV_BODY_CHARS_PER_LINE),
       '',
       '> Tap to return',
     ].join('\n')
@@ -315,8 +341,10 @@ function navBodyText(screen: Extract<Screen, { name: 'NAV_ACTIVE' }>): string {
   ]
 
   if (step) {
-    lines.push(truncate(step.instruction, CHARS_PER_LINE))
-    if (step.street) lines.push(`  on ${truncate(step.street, CHARS_PER_LINE - 5)}`)
+    lines.push(truncate(step.instruction, NAV_BODY_CHARS_PER_LINE))
+    if (step.street) {
+      lines.push(`  on ${truncate(step.street, NAV_BODY_CHARS_PER_LINE - 5)}`)
+    }
   }
 
   lines.push('', RULE, '', '> Tap to stop nav', '  Double-tap → list')

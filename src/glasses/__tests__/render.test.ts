@@ -199,10 +199,14 @@ describe('renderScreen NAV_ACTIVE', () => {
     arrived: false,
   }
 
-  it('returns header + body containers with destination in header', () => {
+  it('returns header + body + minimap containers with destination in header', () => {
     const out = renderScreen(baseNav)
-    expect(out.containerTotalNum).toBe(2)
+    expect(out.containerTotalNum).toBe(3)
     expect(out.textObject?.[0].content).toContain('Central Park Reservoir')
+    // Image container (minimap) is the third container — bridge fills
+    // it in via updateImageRawData after the rebuild lands.
+    expect(out.imageObject).toHaveLength(1)
+    expect(out.imageObject?.[0].containerName).toBe('nav-minimap')
   })
 
   it('body shows arrow, distance, and current step instruction', () => {

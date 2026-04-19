@@ -21,11 +21,13 @@ import {
   CreateStartUpPageContainer,
   EvenAppBridge,
   EvenHubEvent,
+  ImageRawDataUpdate,
   OsEventTypeList,
   waitForEvenAppBridge,
 } from '@evenrealities/even_hub_sdk'
-import { renderInPlaceUpdate, renderScreen } from './render'
+import { ID_MAP, renderInPlaceUpdate, renderScreen } from './render'
 import { EffectRunner } from './effects'
+import { encodeMinimapPng, type MinimapInput } from './minimap'
 import {
   INITIAL_STATE,
   reduce,
@@ -83,6 +85,13 @@ export async function initGlasses(): Promise<void> {
 
     if (prev.screen !== state.screen) {
       pushScreen(bridge, prev.screen.name, state.screen)
+      // NAV_ACTIVE → push the minimap PNG into the image container.
+      // We do this after every screen-object change while on NAV_ACTIVE
+      // (entry rebuild, position updates, arrival), so the user-position
+      // triangle stays in sync with whatever the body text is showing.
+      if (state.screen.name === 'NAV_ACTIVE') {
+        void pushMinimap(bridge, state.screen)
+      }
     }
 
     runner.runAll(result.effects)
@@ -107,6 +116,41 @@ function pushScreen(
     }
   }
   void bridge.rebuildPageContainer(renderScreen(next))
+}
+
+// ─── Minimap push ────────────────────────────────────────────────────────
+
+/**
+ * Encode the NAV_ACTIVE minimap to PNG and push it into the image
+ * container. The host converts our PNG to gray4 internally — see the
+ * SDK's `ImageRawDataUpdateResult.imageToGray4Failed`.
+ *
+ * Errors are swallowed and logged: a failed minimap push shouldn't
+ * derail navigation (the text-only body is still useful on its own).
+ */
+async function pushMinimap(
+  bridge: Pick<EvenAppBridge, 'updateImageRawData'>,
+  screen: Extract<AppState['screen'], { name: 'NAV_ACTIVE' }>,
+): Promise<void> {
+  const input: MinimapInput = {
+    geometry: screen.route.geometry,
+    destination: { lat: screen.destination.lat, lng: screen.destination.lng },
+    position: screen.position,
+    headingDegrees: null,
+  }
+  try {
+    const png = await encodeMinimapPng(input)
+    if (!png) return
+    await bridge.updateImageRawData(
+      new ImageRawDataUpdate({
+        containerID: ID_MAP,
+        containerName: 'nav-minimap',
+        imageData: Array.from(png),
+      }),
+    )
+  } catch (err) {
+    console.warn('[wander] minimap push failed', err)
+  }
 }
 
 // ─── Event translation ──────────────────────────────────────────────────
