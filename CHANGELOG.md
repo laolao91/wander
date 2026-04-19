@@ -48,3 +48,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   English for languages ORS doesn't support). Regional subtags like
   `fr-CA` are stripped to the base code. All responses set
   `Vary: Accept-Language` so edge caches don't cross-contaminate.
+- **Phase 3 (text-only)** — End-to-end glasses app, minimap deferred:
+  - `src/glasses/render.ts` — pure transforms from `Screen` →
+    `RebuildPageContainer` (full layout) and `TextContainerUpgrade`
+    (in-place updates for cursor moves, wiki page flips, NAV_ACTIVE
+    position ticks). Layout is 576×288, 48px header + 240px body, with
+    stable container IDs (1=main, 2=body, 3=list) so upgrades target
+    the same container across rebuilds. NAV_ACTIVE is text-only this
+    iteration: 8-cardinal arrow + haversine remaining distance + the
+    current step instruction. Canvas minimap deferred to a focused
+    fresh session.
+  - `src/glasses/effects.ts` — `EffectRunner` class executes the
+    reducer's `Effect[]`. `navigator.geolocation`, `window.open`, and
+    `watchPosition` are dependency-injected so the runner is testable
+    without a DOM. ApiError 400 from `/api/poi` is reclassified as a
+    location failure (the endpoint rejects missing/invalid lat/lng
+    with that status). `backgroundRefresh()` is a separate entry
+    point so the resulting `pois-loaded` event carries
+    `isBackgroundRefresh: true`.
+  - `src/glasses/bridge.ts` — replaces the splash-only Phase 1 stub
+    with the full main loop: boot via `createStartUpPageContainer`,
+    kick off the first POI fetch, start a 5-minute background refresh
+    timer, subscribe to `onEvenHubEvent`. After every dispatch, push
+    the new screen via `textContainerUpgrade` when the screen-kind is
+    unchanged (cheap), else `rebuildPageContainer`. Glasses event
+    translation factored into `translateGlassesEvent()` and exported
+    for testing — list events carry an item index, text/sys events
+    use the cursor; double-click is "exit" on top-level screens and
+    "back" elsewhere.
+  - 49 new tests added (88 total): 27 for render, 13 for effects,
+    9 for bridge translation, on top of the existing 21 reducer +
+    18 API tests. Build is clean; only the simulator smoke test
+    remains for the user.
