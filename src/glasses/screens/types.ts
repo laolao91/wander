@@ -1,0 +1,157 @@
+/**
+ * Screen state discriminated union for the glasses display.
+ *
+ * Per WANDER_BUILD_SPEC §6, the G2 cycles through 8 screens. Each one
+ * carries the data it needs to render — putting the data on the screen
+ * variant (rather than a flat AppState bag) makes invalid combinations
+ * unrepresentable. The reducer in `../state.ts` returns one of these
+ * variants and the bridge layer (Phase 3) renders accordingly.
+ */
+
+import type { Poi, Route, WikiArticle } from '../api'
+
+export type ScreenName =
+  | 'LOADING'
+  | 'POI_LIST'
+  | 'POI_DETAIL'
+  | 'NAV_ACTIVE'
+  | 'WIKI_READ'
+  | 'ERROR_LOCATION'
+  | 'ERROR_NETWORK'
+  | 'ERROR_EMPTY'
+
+/** "What is the glasses display showing?" — the only screen-shaped state. */
+export type Screen =
+  | LoadingScreen
+  | PoiListScreen
+  | PoiDetailScreen
+  | NavActiveScreen
+  | WikiReadScreen
+  | ErrorLocationScreen
+  | ErrorNetworkScreen
+  | ErrorEmptyScreen
+
+export interface LoadingScreen {
+  name: 'LOADING'
+  message: string
+}
+
+export interface PoiListScreen {
+  name: 'POI_LIST'
+  pois: Poi[]
+}
+
+/**
+ * Detail/action menu for one POI. Cursor 0–3 corresponds to the four
+ * actions: Navigate, Open in Safari, Read More, Back to List.
+ *
+ * "Open in Safari" is hidden when `poi.websiteUrl === null`; the cursor
+ * still cycles 0–3 over the remaining actions, with index 1 mapping to
+ * Read More in that case. The reducer collapses the action set, so
+ * cursor bounds always reflect what's actually visible.
+ */
+export interface PoiDetailScreen {
+  name: 'POI_DETAIL'
+  poi: Poi
+  actions: PoiDetailAction[]
+  cursorIndex: number
+}
+
+export type PoiDetailAction = 'navigate' | 'safari' | 'read-more' | 'back'
+
+export interface NavActiveScreen {
+  name: 'NAV_ACTIVE'
+  destination: Poi
+  route: Route
+  /** Index into `route.steps`. */
+  currentStepIndex: number
+  /** Last known user position — the bridge will update this every 10s. */
+  position: { lat: number; lng: number } | null
+  /** True once user is within the arrival radius (20m per spec §8). */
+  arrived: boolean
+}
+
+export interface WikiReadScreen {
+  name: 'WIKI_READ'
+  /** The POI we came from — used to return on tap/scroll-top-at-page-0. */
+  fromPoi: Poi
+  article: WikiArticle
+  pageIndex: number
+}
+
+export interface ErrorLocationScreen {
+  name: 'ERROR_LOCATION'
+  message: string
+}
+
+export interface ErrorNetworkScreen {
+  name: 'ERROR_NETWORK'
+  message: string
+  /** Where to retry to — affects what the reducer dispatches on retry. */
+  retryAction: 'fetch-pois' | 'fetch-route' | 'fetch-wiki'
+}
+
+export interface ErrorEmptyScreen {
+  name: 'ERROR_EMPTY'
+  /** True if the user can widen radius / change categories from settings. */
+  filtersAreNarrow: boolean
+}
+
+// ─── Settings (kept on AppState, surfaced into POI fetches) ────────────
+
+export interface Settings {
+  radiusMiles: number
+  categories: import('../api').Category[]
+  /** Optional locale override; null means "use Accept-Language". */
+  lang: string | null
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  radiusMiles: 0.75,
+  categories: ['landmark', 'park', 'museum', 'religion', 'food'],
+  lang: null,
+}
+
+// ─── Transition map (documentation + runtime guard) ────────────────────
+
+/**
+ * Allowed screen-to-screen transitions per spec §6 / §10. Used by the
+ * reducer to reject invalid jumps in dev (cheap insurance against bugs
+ * where the bridge dispatches the wrong event for the current screen).
+ */
+export const ALLOWED_TRANSITIONS: Record<ScreenName, ReadonlySet<ScreenName>> = {
+  LOADING: new Set([
+    'POI_LIST',
+    'ERROR_LOCATION',
+    'ERROR_NETWORK',
+    'ERROR_EMPTY',
+  ]),
+  POI_LIST: new Set([
+    'POI_DETAIL',
+    'LOADING', // refresh
+    'ERROR_NETWORK',
+    'ERROR_EMPTY',
+  ]),
+  POI_DETAIL: new Set([
+    'POI_LIST', // back
+    'NAV_ACTIVE', // navigate
+    'WIKI_READ', // read more
+    'ERROR_NETWORK',
+    'ERROR_LOCATION', // navigate tapped without GPS
+  ]),
+  NAV_ACTIVE: new Set([
+    'POI_DETAIL', // tap to stop
+    'POI_LIST', // double-tap to stop
+    'ERROR_LOCATION', // GPS lost
+  ]),
+  WIKI_READ: new Set([
+    'POI_DETAIL', // tap or scroll-top from page 0
+  ]),
+  ERROR_LOCATION: new Set(['LOADING', 'POI_LIST']),
+  ERROR_NETWORK: new Set(['LOADING', 'POI_LIST', 'POI_DETAIL']),
+  ERROR_EMPTY: new Set(['LOADING', 'POI_LIST']),
+}
+
+export function canTransition(from: ScreenName, to: ScreenName): boolean {
+  return ALLOWED_TRANSITIONS[from].has(to)
+}

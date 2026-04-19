@@ -25,6 +25,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Phase 2b** — Overpass mirror fallback: tries Kumi Systems → main →
   private.coffee, with HTML-at-200 detection for the common "server
   too busy" error that previously silently dropped all OSM results.
+- **Phase 3 prep** — Glasses-side scaffolding, no SDK wiring yet:
+  - `src/glasses/api.ts` — typed client wrappers around `/api/poi`,
+    `/api/wiki`, `/api/route`. Pure functions, AbortSignal-aware,
+    composable with caller cancellation. All errors normalize to
+    `ApiError` with `endpoint`/`status`/`detail`.
+  - `src/glasses/screens/types.ts` — discriminated union for the 8
+    screens per spec §6 (LOADING, POI_LIST, POI_DETAIL, NAV_ACTIVE,
+    WIKI_READ, ERROR_LOCATION, ERROR_NETWORK, ERROR_EMPTY). Data
+    lives on the variant so invalid combinations are unrepresentable.
+    Includes `ALLOWED_TRANSITIONS` map enforced by the reducer.
+  - `src/glasses/state.ts` — pure reducer (`reduce(state, event)
+    → { state, effects }`). 21 unit tests cover happy paths, GPS
+    edge cases, OSM-only POI action menu collapse, background
+    refresh stash + apply-on-back, and transition guard. Bridge
+    layer (Phase 3 proper) executes the effects.
 - **Phase 2c** — Localization across all three public endpoints:
   accept `?lang=` query param, fall back to `Accept-Language` header,
   default to `en`. `/api/wiki` and `/api/poi` route Wikipedia calls
