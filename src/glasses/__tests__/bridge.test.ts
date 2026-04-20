@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { translateGlassesEvent } from '../bridge'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { translateGlassesEvent, _resetBridgeEventState } from '../bridge'
 import { INITIAL_STATE, type AppState, type Event } from '../state'
 import {
   List_ItemEvent,
@@ -61,6 +61,10 @@ function makeBridge() {
   return { shutDownPageContainer: vi.fn() }
 }
 
+beforeEach(() => {
+  _resetBridgeEventState()
+})
+
 describe('translateGlassesEvent — listEvent', () => {
   it('CLICK_EVENT dispatches tap with itemIndex', () => {
     const dispatch = vi.fn<(e: Event) => void>()
@@ -81,6 +85,7 @@ describe('translateGlassesEvent — listEvent', () => {
       dispatch,
       makeBridge(),
     )
+    _resetBridgeEventState() // clear scroll cooldown between intentional calls
     translateGlassesEvent(
       listEvt(OsEventTypeList.SCROLL_BOTTOM_EVENT),
       poiListState(),
@@ -125,6 +130,7 @@ describe('translateGlassesEvent — text/sys events', () => {
       dispatch,
       makeBridge(),
     )
+    _resetBridgeEventState()
     translateGlassesEvent(
       textEvt(OsEventTypeList.SCROLL_BOTTOM_EVENT),
       detailState(),
@@ -135,7 +141,7 @@ describe('translateGlassesEvent — text/sys events', () => {
     expect(dispatch).toHaveBeenNthCalledWith(2, { type: 'cursor-down' })
   })
 
-  it('DOUBLE_CLICK on POI_DETAIL dispatches back (not exit)', () => {
+  it('DOUBLE_CLICK on POI_DETAIL now dispatches request-exit (unified flow)', () => {
     const dispatch = vi.fn<(e: Event) => void>()
     const bridge = makeBridge()
     translateGlassesEvent(
@@ -144,7 +150,7 @@ describe('translateGlassesEvent — text/sys events', () => {
       dispatch,
       bridge,
     )
-    expect(dispatch).toHaveBeenCalledWith({ type: 'back' })
+    expect(dispatch).toHaveBeenCalledWith({ type: 'request-exit' })
     expect(bridge.shutDownPageContainer).not.toHaveBeenCalled()
   })
 
@@ -165,5 +171,139 @@ describe('translateGlassesEvent — text/sys events', () => {
     const dispatch = vi.fn<(e: Event) => void>()
     translateGlassesEvent({}, detailState(), dispatch, makeBridge())
     expect(dispatch).not.toHaveBeenCalled()
+  })
+})
+
+// Phase 1 fixes — HANDOFF §A1–A4. These cover real-hardware quirks that
+// the previous translation didn't handle.
+describe('translateGlassesEvent — Phase 1 fixes', () => {
+  it('listEvent with undefined eventType is treated as CLICK (SDK quirk)', () => {
+    const dispatch = vi.fn<(e: Event) => void>()
+    translateGlassesEvent(
+      // eventType omitted → deserializes as undefined over real BLE bridge
+      { listEvent: new List_ItemEvent({ currentSelectItemIndex: 2 }) },
+      poiListState(),
+      dispatch,
+      makeBridge(),
+    )
+    expect(dispatch).toHaveBeenCalledWith({ type: 'tap', itemIndex: 2 })
+  })
+
+  it('textEvent with undefined eventType is treated as CLICK', () => {
+    const dispatch = vi.fn<(e: Event) => void>()
+    translateGlassesEvent(
+      { textEvent: new Text_ItemEvent({}) },
+      detailState(),
+      dispatch,
+      makeBridge(),
+    )
+    expect(dispatch).toHaveBeenCalledWith({ type: 'tap' })
+  })
+
+  it('sysEvent with undefined eventType is treated as CLICK (simulator path)', () => {
+    const dispatch = vi.fn<(e: Event) => void>()
+    translateGlassesEvent(
+      { sysEvent: new Sys_ItemEvent({}) },
+      detailState(),
+      dispatch,
+      makeBridge(),
+    )
+    expect(dispatch).toHaveBeenCalledWith({ type: 'tap' })
+  })
+
+  it('scroll cooldown: a second scroll within 300ms is dropped', () => {
+    const dispatch = vi.fn<(e: Event) => void>()
+    translateGlassesEvent(
+      textEvt(OsEventTypeList.SCROLL_BOTTOM_EVENT),
+      detailState(),
+      dispatch,
+      makeBridge(),
+    )
+    // Intentionally NO reset — simulate a boundary bounce firing twice
+    // back-to-back within the cooldown window.
+    translateGlassesEvent(
+      textEvt(OsEventTypeList.SCROLL_BOTTOM_EVENT),
+      detailState(),
+      dispatch,
+      makeBridge(),
+    )
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect(dispatch).toHaveBeenCalledWith({ type: 'cursor-down' })
+  })
+
+  it('scroll cooldown absorbs a rapid direction reversal (still a bounce)', () => {
+    const dispatch = vi.fn<(e: Event) => void>()
+    translateGlassesEvent(
+      listEvt(OsEventTypeList.SCROLL_TOP_EVENT),
+      poiListState(),
+      dispatch,
+      makeBridge(),
+    )
+    translateGlassesEvent(
+      listEvt(OsEventTypeList.SCROLL_BOTTOM_EVENT),
+      poiListState(),
+      dispatch,
+      makeBridge(),
+    )
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect(dispatch).toHaveBeenCalledWith({ type: 'cursor-up' })
+  })
+
+  it('DOUBLE_CLICK on NAV_ACTIVE surfaces exit prompt (unified)', () => {
+    const dispatch = vi.fn<(e: Event) => void>()
+    translateGlassesEvent(
+      textEvt(OsEventTypeList.DOUBLE_CLICK_EVENT),
+      {
+        ...INITIAL_STATE,
+        screen: {
+          name: 'NAV_ACTIVE',
+          destination: detailState().screen.name === 'POI_DETAIL'
+            ? (detailState().screen as any).poi
+            : (null as any),
+          route: { totalDistanceMeters: 0, totalDurationSeconds: 0, steps: [], geometry: [] },
+          currentStepIndex: 0,
+          position: null,
+          hasArrived: false,
+        } as any,
+      },
+      dispatch,
+      makeBridge(),
+    )
+    expect(dispatch).toHaveBeenCalledWith({ type: 'request-exit' })
+  })
+
+  it('DOUBLE_CLICK on WIKI_READ surfaces exit prompt (unified)', () => {
+    const dispatch = vi.fn<(e: Event) => void>()
+    translateGlassesEvent(
+      textEvt(OsEventTypeList.DOUBLE_CLICK_EVENT),
+      {
+        ...INITIAL_STATE,
+        screen: {
+          name: 'WIKI_READ',
+          poi: (detailState().screen as any).poi,
+          pages: ['p1', 'p2'],
+          pageIndex: 0,
+        } as any,
+      },
+      dispatch,
+      makeBridge(),
+    )
+    expect(dispatch).toHaveBeenCalledWith({ type: 'request-exit' })
+  })
+
+  it('listEvent with unknown type falls through to textEvent when present', () => {
+    const dispatch = vi.fn<(e: Event) => void>()
+    translateGlassesEvent(
+      {
+        // Unrecognized listEvent (e.g. a future SDK enum value) + a
+        // meaningful textEvent should not be silently eaten.
+        listEvent: new List_ItemEvent({ eventType: 999 as OsEventTypeList }),
+        textEvent: new Text_ItemEvent({ eventType: OsEventTypeList.CLICK_EVENT }),
+      },
+      detailState(),
+      dispatch,
+      makeBridge(),
+    )
+    expect(dispatch).toHaveBeenCalledWith({ type: 'tap' })
   })
 })

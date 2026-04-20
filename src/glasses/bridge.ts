@@ -37,6 +37,30 @@ import {
 
 const BACKGROUND_REFRESH_MS = 5 * 60 * 1000
 
+// Scroll-cooldown window. Spec §17: the G2 firmware can double-fire a
+// single R1-ring or temple gesture at scroll boundaries. A 300ms window
+// is enough to absorb those bounces without making intentional scrolls
+// feel laggy. Direction-agnostic: a fast reversal within 300ms is
+// almost always a bounce, not a user action.
+const SCROLL_COOLDOWN_MS = 300
+let _lastScrollAt = 0
+
+/** Test-only: reset module-level runtime state between test cases. */
+export function _resetBridgeEventState(): void {
+  _lastScrollAt = 0
+}
+
+/**
+ * Normalize the SDK's `eventType` field. Per the documented SDK quirk
+ * (WANDER_BUILD_SPEC §17): `CLICK_EVENT = 0` deserializes to `undefined`
+ * over the real BLE bridge. We treat `undefined` the same as CLICK.
+ */
+function normalizeEventType(
+  raw: OsEventTypeList | undefined,
+): OsEventTypeList {
+  return raw === undefined ? OsEventTypeList.CLICK_EVENT : raw
+}
+
 export async function initGlasses(): Promise<void> {
   const bridge = await waitForEvenAppBridge()
   let state: AppState = INITIAL_STATE
@@ -171,28 +195,59 @@ export function translateGlassesEvent(
   // CONFIRM_EXIT screen + 'exit-app' effect now).
   _bridge?: Pick<EvenAppBridge, 'shutDownPageContainer'>,
 ): void {
+  // Phase 0 diagnostic — captures source (list/text/sys), eventType, and
+  // full payload so we can see what real hardware is sending vs the
+  // simulator. Remove once input bugs (HANDOFF §A1–A3) are fixed.
+  try {
+    const source = evt.listEvent
+      ? 'list'
+      : evt.textEvent
+        ? 'text'
+        : evt.sysEvent
+          ? 'sys'
+          : 'none'
+    const inner = evt.listEvent ?? evt.textEvent ?? evt.sysEvent
+    const rawType = inner?.eventType
+    console.log(
+      '[wander][evt]',
+      'screen=' + state.screen.name,
+      'source=' + source,
+      'eventType=' + String(rawType) + (rawType === undefined ? ' (undefined=CLICK?)' : ''),
+      JSON.stringify(evt),
+    )
+  } catch {
+    // Never let logging break event routing.
+  }
+
   // List events come from POI_LIST (or any future list screen). They
   // carry the selected item index, which the reducer needs for `tap`.
+  // If `evt.listEvent` is present but the event type doesn't match any
+  // list-screen case, we fall through to the text/sys handler rather
+  // than returning — HANDOFF §A1 notes real hardware may deliver a
+  // meaningful textEvent alongside an unrecognized listEvent.
   if (evt.listEvent) {
     const e = evt.listEvent
-    switch (e.eventType) {
+    const type = normalizeEventType(e.eventType)
+    switch (type) {
       case OsEventTypeList.CLICK_EVENT:
         dispatch({ type: 'tap', itemIndex: e.currentSelectItemIndex })
         return
       case OsEventTypeList.SCROLL_TOP_EVENT:
+        if (scrollOnCooldown()) return
         dispatch({ type: 'cursor-up' })
         return
       case OsEventTypeList.SCROLL_BOTTOM_EVENT:
+        if (scrollOnCooldown()) return
         dispatch({ type: 'cursor-down' })
         return
       case OsEventTypeList.DOUBLE_CLICK_EVENT:
-        // From the list, double-click surfaces the exit confirmation
-        // (the reducer transitions to CONFIRM_EXIT, the runner's
-        // 'exit-app' effect is what actually shuts the app down).
+        // Double-tap from any screen surfaces the exit-confirmation
+        // prompt. The reducer gates `request-exit` so repeated
+        // double-taps while already on CONFIRM_EXIT don't stack.
         dispatch({ type: 'request-exit' })
         return
     }
-    return
+    // Fall through — listEvent present but no recognized type.
   }
 
   // Text/sys events come from text-only screens (POI_DETAIL, NAV_ACTIVE,
@@ -201,37 +256,34 @@ export function translateGlassesEvent(
   const e = evt.textEvent ?? evt.sysEvent
   if (!e) return
 
-  switch (e.eventType) {
+  const type = normalizeEventType(e.eventType)
+  switch (type) {
     case OsEventTypeList.CLICK_EVENT:
       dispatch({ type: 'tap' })
       return
 
     case OsEventTypeList.SCROLL_TOP_EVENT:
+      if (scrollOnCooldown()) return
       dispatch({ type: 'cursor-up' })
       return
 
     case OsEventTypeList.SCROLL_BOTTOM_EVENT:
+      if (scrollOnCooldown()) return
       dispatch({ type: 'cursor-down' })
       return
 
     case OsEventTypeList.DOUBLE_CLICK_EVENT:
-      // Double-click surfaces an exit prompt on top-level screens (so a
-      // single missed tap doesn't close the app); on inner screens it
-      // navigates back.
-      if (isTopLevelScreen(state.screen.name)) {
-        dispatch({ type: 'request-exit' })
-      } else {
-        dispatch({ type: 'back' })
-      }
+      // Unified: double-tap always surfaces the exit-confirmation
+      // prompt, regardless of screen. HANDOFF §A3 — the prior
+      // top-level-vs-inner branching was confusing on real hardware.
+      dispatch({ type: 'request-exit' })
       return
   }
 }
 
-function isTopLevelScreen(name: AppState['screen']['name']): boolean {
-  return (
-    name === 'POI_LIST' ||
-    name === 'LOADING' ||
-    name === 'ERROR_LOCATION' ||
-    name === 'ERROR_EMPTY'
-  )
+function scrollOnCooldown(): boolean {
+  const now = Date.now()
+  if (now - _lastScrollAt < SCROLL_COOLDOWN_MS) return true
+  _lastScrollAt = now
+  return false
 }
