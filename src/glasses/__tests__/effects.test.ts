@@ -47,21 +47,43 @@ afterEach(() => {
 
 describe('fetch-pois effect', () => {
   it('dispatches position-updated then pois-loaded on success', async () => {
-    vi.spyOn(api, 'fetchPois').mockResolvedValue([MOCK_POI])
+    vi.spyOn(api, 'fetchPois').mockResolvedValue({
+      items: [MOCK_POI],
+      hasMore: false,
+    })
     const { runner, dispatched } = makeRunner()
-    await runner.run({ type: 'fetch-pois' })
+    await runner.run({ type: 'fetch-pois', offset: 0, mode: 'replace' })
     expect(dispatched.map((e) => e.type)).toEqual([
       'position-updated',
       'pois-loaded',
     ])
     const loaded = dispatched[1] as Extract<Event, { type: 'pois-loaded' }>
     expect(loaded.pois).toHaveLength(1)
+    expect(loaded.hasMore).toBe(false)
+    expect(loaded.mode).toBe('replace')
     expect(loaded.isBackgroundRefresh).toBe(false)
+  })
+
+  it('forwards offset + mode through to the api wrapper and dispatch', async () => {
+    const spy = vi
+      .spyOn(api, 'fetchPois')
+      .mockResolvedValue({ items: [MOCK_POI], hasMore: true })
+    const { runner, dispatched } = makeRunner()
+    await runner.run({ type: 'fetch-pois', offset: 20, mode: 'append' })
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ offset: 20 }),
+    )
+    const loaded = dispatched.find((e) => e.type === 'pois-loaded') as Extract<
+      Event,
+      { type: 'pois-loaded' }
+    >
+    expect(loaded.mode).toBe('append')
+    expect(loaded.hasMore).toBe(true)
   })
 
   it('dispatches pois-failed reason=location when geolocation fails', async () => {
     const { runner, dispatched } = makeRunner({ geolocate: async () => null })
-    await runner.run({ type: 'fetch-pois' })
+    await runner.run({ type: 'fetch-pois', offset: 0, mode: 'replace' })
     expect(dispatched).toEqual([{ type: 'pois-failed', reason: 'location' }])
   })
 
@@ -70,7 +92,7 @@ describe('fetch-pois effect', () => {
       new api.ApiError('boom', '/poi', 500),
     )
     const { runner, dispatched } = makeRunner()
-    await runner.run({ type: 'fetch-pois' })
+    await runner.run({ type: 'fetch-pois', offset: 0, mode: 'replace' })
     expect(dispatched.at(-1)).toEqual({ type: 'pois-failed', reason: 'network' })
   })
 
@@ -79,12 +101,15 @@ describe('fetch-pois effect', () => {
       new api.ApiError('bad lat', '/poi', 400),
     )
     const { runner, dispatched } = makeRunner()
-    await runner.run({ type: 'fetch-pois' })
+    await runner.run({ type: 'fetch-pois', offset: 0, mode: 'replace' })
     expect(dispatched.at(-1)).toEqual({ type: 'pois-failed', reason: 'location' })
   })
 
-  it('backgroundRefresh sets isBackgroundRefresh=true on the pois-loaded event', async () => {
-    vi.spyOn(api, 'fetchPois').mockResolvedValue([MOCK_POI])
+  it('backgroundRefresh sets isBackgroundRefresh=true and uses replace mode', async () => {
+    vi.spyOn(api, 'fetchPois').mockResolvedValue({
+      items: [MOCK_POI],
+      hasMore: false,
+    })
     const { runner, dispatched } = makeRunner()
     await runner.backgroundRefresh()
     const loaded = dispatched.find((e) => e.type === 'pois-loaded') as Extract<
@@ -92,6 +117,7 @@ describe('fetch-pois effect', () => {
       { type: 'pois-loaded' }
     >
     expect(loaded.isBackgroundRefresh).toBe(true)
+    expect(loaded.mode).toBe('replace')
   })
 })
 

@@ -55,7 +55,7 @@ export class EffectRunner {
   async run(effect: Effect): Promise<void> {
     switch (effect.type) {
       case 'fetch-pois':
-        await this.runFetchPois(false)
+        await this.runFetchPois(effect.offset, effect.mode, false)
         return
       case 'fetch-route':
         await this.runFetchRoute(effect.from, effect.to.lat, effect.to.lng)
@@ -81,10 +81,12 @@ export class EffectRunner {
   /**
    * The bridge calls this directly on its 5-minute timer — background
    * refreshes don't go through the reducer's effect path because the
-   * `pois-loaded` event needs `isBackgroundRefresh: true`.
+   * `pois-loaded` event needs `isBackgroundRefresh: true`. Always
+   * fetches page 0 in replace mode; if the user has loaded extra pages,
+   * background refresh resets back to the first page.
    */
   async backgroundRefresh(): Promise<void> {
-    await this.runFetchPois(true)
+    await this.runFetchPois(0, 'replace', true)
   }
 
   /** Bridge calls this on shutdown to stop any in-flight GPS watch. */
@@ -94,7 +96,11 @@ export class EffectRunner {
 
   // ─── Effect implementations ──────────────────────────────────────────
 
-  private async runFetchPois(isBackgroundRefresh: boolean): Promise<void> {
+  private async runFetchPois(
+    offset: number,
+    mode: 'replace' | 'append',
+    isBackgroundRefresh: boolean,
+  ): Promise<void> {
     const pos = await this.deps.geolocate()
     if (!pos) {
       this.deps.dispatch({ type: 'pois-failed', reason: 'location' })
@@ -104,14 +110,21 @@ export class EffectRunner {
     const settings = this.deps.getSettings()
 
     try {
-      const pois = await fetchPois({
+      const page = await fetchPois({
         lat: pos.lat,
         lng: pos.lng,
         radiusMiles: settings.radiusMiles,
         categories: settings.categories,
         lang: settings.lang ?? undefined,
+        offset,
       })
-      this.deps.dispatch({ type: 'pois-loaded', pois, isBackgroundRefresh })
+      this.deps.dispatch({
+        type: 'pois-loaded',
+        pois: page.items,
+        hasMore: page.hasMore,
+        mode,
+        isBackgroundRefresh,
+      })
     } catch (err) {
       this.deps.dispatch({ type: 'pois-failed', reason: reasonFor(err) })
     }
@@ -175,17 +188,46 @@ function reasonFor(err: unknown): 'location' | 'network' | 'empty' {
 
 // ─── Browser-API defaults ────────────────────────────────────────────────
 
+// ⚠️ REMOVE BEFORE EVENHUB STORE SUBMISSION ⚠️
+// Dev-only mock: the simulator's WebView has no geolocation, so we honor
+// VITE_MOCK_LAT / VITE_MOCK_LNG from .env.local when running under Vite
+// dev (`import.meta.env.DEV === true`). Gated on DEV so it is stripped
+// from the production bundle, but we still want to delete this block
+// before submission — no spoofed or dummy data should ship.
+// Tracked in memory: project_wander_dev_geo_mock.md.
+function readDevMockCoords(): { lat: number; lng: number } | null {
+  if (!import.meta.env.DEV) return null
+  const lat = parseFloat(import.meta.env.VITE_MOCK_LAT ?? '')
+  const lng = parseFloat(import.meta.env.VITE_MOCK_LNG ?? '')
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  return { lat, lng }
+}
+
+// Wall-clock ceiling for the one-shot geolocation lookup. The SDK's
+// PositionOptions.timeout is 10s, but on real G2 hardware we've seen the
+// WebView's getCurrentPosition never fire either callback — the loading
+// screen hangs indefinitely. This outer race guarantees the reducer
+// always hears back (null → ERROR_LOCATION → user sees retry).
+const GEOLOCATE_WALL_CLOCK_MS = 15000
+
 function defaultGeolocate(): Promise<{ lat: number; lng: number } | null> {
+  const mock = readDevMockCoords()
+  if (mock) return Promise.resolve(mock)
+
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
     return Promise.resolve(null)
   }
-  return new Promise((resolve) => {
+  const gps = new Promise<{ lat: number; lng: number } | null>((resolve) => {
     navigator.geolocation.getCurrentPosition(
       (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
       () => resolve(null),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
     )
   })
+  const wallClock = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), GEOLOCATE_WALL_CLOCK_MS),
+  )
+  return Promise.race([gps, wallClock])
 }
 
 function defaultOpenUrl(url: string): void {
@@ -196,6 +238,15 @@ function defaultOpenUrl(url: string): void {
 function defaultWatchPosition(
   onPosition: (lat: number, lng: number) => void,
 ): () => void {
+  const mock = readDevMockCoords()
+  if (mock) {
+    // Fire once on next tick so subscribers see the same contract as the
+    // real API (asynchronous first sample). No ongoing updates — the
+    // simulator has nothing to update from.
+    const timer = setTimeout(() => onPosition(mock.lat, mock.lng), 0)
+    return () => clearTimeout(timer)
+  }
+
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
     return () => {}
   }

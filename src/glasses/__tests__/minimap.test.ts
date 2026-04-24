@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import {
   bearingBetween,
+  cardinalTicks,
   dashSegments,
   fitBounds,
   geometryAsLatLng,
   MINIMAP_HEIGHT,
   MINIMAP_WIDTH,
+  northArrow,
   projectPoint,
   trianglePath,
 } from '../minimap'
@@ -168,6 +170,93 @@ describe('bearingBetween', () => {
     const b = bearingBetween({ lat: 40, lng: -74 }, { lat: 40, lng: -73.99 })
     expect(b).toBeGreaterThan(89)
     expect(b).toBeLessThan(91)
+  })
+})
+
+// ─── cardinalTicks (Phase 4b) ──────────────────────────────────────────
+
+describe('cardinalTicks', () => {
+  it('places N at the top-center edge, pointing inward', () => {
+    const t = cardinalTicks()
+    expect(t.N[0].x).toBeCloseTo(MINIMAP_WIDTH / 2, 5)
+    expect(t.N[0].y).toBe(0)
+    expect(t.N[1].x).toBeCloseTo(MINIMAP_WIDTH / 2, 5)
+    expect(t.N[1].y).toBeGreaterThan(0)
+  })
+
+  it('places S at the bottom-center edge, pointing inward', () => {
+    const t = cardinalTicks()
+    expect(t.S[0].x).toBeCloseTo(MINIMAP_WIDTH / 2, 5)
+    expect(t.S[1].y).toBe(MINIMAP_HEIGHT)
+    // Second endpoint is the canvas edge; first is inside.
+    expect(t.S[0].y).toBeLessThan(t.S[1].y)
+  })
+
+  it('places W at the left-center edge, pointing inward', () => {
+    const t = cardinalTicks()
+    expect(t.W[0].x).toBe(0)
+    expect(t.W[0].y).toBeCloseTo(MINIMAP_HEIGHT / 2, 5)
+    expect(t.W[1].x).toBeGreaterThan(0)
+  })
+
+  it('places E at the right-center edge, pointing inward', () => {
+    const t = cardinalTicks()
+    expect(t.E[1].x).toBe(MINIMAP_WIDTH)
+    expect(t.E[0].y).toBeCloseTo(MINIMAP_HEIGHT / 2, 5)
+    expect(t.E[0].x).toBeLessThan(t.E[1].x)
+  })
+
+  it('scales with a custom canvas size', () => {
+    const t = cardinalTicks(100, 50, 2)
+    expect(t.N[0].x).toBe(50)
+    expect(t.N[1].y).toBe(2)
+    expect(t.S[1].y).toBe(50)
+    expect(t.E[1].x).toBe(100)
+    expect(t.W[0].x).toBe(0)
+  })
+
+  it('has the default tick length of 4 pixels', () => {
+    const t = cardinalTicks()
+    expect(t.N[1].y).toBe(4)
+    expect(t.W[1].x).toBe(4)
+  })
+})
+
+// ─── northArrow (Phase 4b) ─────────────────────────────────────────────
+
+describe('northArrow', () => {
+  it('sits in the top-right corner of the canvas', () => {
+    const a = northArrow()
+    // Tip near the right edge.
+    expect(a.triangle[0].x).toBeGreaterThan(MINIMAP_WIDTH - 20)
+    expect(a.triangle[0].x).toBeLessThan(MINIMAP_WIDTH)
+    // Tip near the top edge.
+    expect(a.triangle[0].y).toBeLessThan(10)
+  })
+
+  it('points upward — tip is above the two base corners', () => {
+    const a = northArrow()
+    expect(a.triangle[0].y).toBeLessThan(a.triangle[1].y)
+    expect(a.triangle[0].y).toBeLessThan(a.triangle[2].y)
+  })
+
+  it('has a horizontal base — two base corners share y', () => {
+    const a = northArrow()
+    expect(a.triangle[1].y).toBeCloseTo(a.triangle[2].y, 5)
+  })
+
+  it('label anchor is to the right of the triangle and below its tip', () => {
+    const a = northArrow()
+    expect(a.label.x).toBeGreaterThanOrEqual(a.triangle[0].x)
+    expect(a.label.y).toBeGreaterThanOrEqual(a.triangle[0].y)
+  })
+
+  it('scales with a custom canvas width', () => {
+    const wide = northArrow(400)
+    const narrow = northArrow(200)
+    // Arrow tracks the right edge of the canvas it's drawn on.
+    expect(wide.triangle[0].x).toBeGreaterThan(narrow.triangle[0].x)
+    expect(wide.triangle[0].x - narrow.triangle[0].x).toBeCloseTo(200, 5)
   })
 })
 

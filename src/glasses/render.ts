@@ -27,6 +27,19 @@ export const DISPLAY_HEIGHT = 288
 const HEADER_HEIGHT = 48
 const BODY_Y = HEADER_HEIGHT
 const BODY_HEIGHT = DISPLAY_HEIGHT - HEADER_HEIGHT
+// Two-line headers (POI_DETAIL + NAV_ACTIVE) need a taller strip so
+// line 2 — the "★ landmark · 0.2 mi · ~4 min" metadata row on detail,
+// or the "↓ category" row under the destination name on nav — doesn't
+// clip on the G2's non-monospace fixed font. Clipping confirmed at
+// HEADER_HEIGHT=48 in real-HW (2026-04-19 POI_DETAIL, 2026-04-24
+// NAV_ACTIVE) and simulator (2026-04-20 + 2026-04-24) testing.
+const TWO_LINE_HEADER_HEIGHT = 72
+const POI_DETAIL_HEADER_HEIGHT = TWO_LINE_HEADER_HEIGHT
+const POI_DETAIL_BODY_Y = POI_DETAIL_HEADER_HEIGHT
+const POI_DETAIL_BODY_HEIGHT = DISPLAY_HEIGHT - POI_DETAIL_HEADER_HEIGHT
+const NAV_HEADER_HEIGHT = TWO_LINE_HEADER_HEIGHT
+const NAV_BODY_Y = NAV_HEADER_HEIGHT
+const NAV_BODY_HEIGHT = DISPLAY_HEIGHT - NAV_HEADER_HEIGHT
 
 /** Approx char width at the G2's standard font; used for centering math. */
 const CHARS_PER_LINE = 65
@@ -45,9 +58,18 @@ const NAV_TEXT_WIDTH = DISPLAY_WIDTH - MINIMAP_WIDTH // 336
 const NAV_MAP_X = NAV_TEXT_WIDTH // 336
 // Vertically centre the map inside the body area (8px above the rule
 // the simulator screenshots show, 8px below the bottom hint).
-const NAV_MAP_Y = BODY_Y + Math.floor((BODY_HEIGHT - MINIMAP_HEIGHT) / 2)
+const NAV_MAP_Y = NAV_BODY_Y + Math.floor((NAV_BODY_HEIGHT - MINIMAP_HEIGHT) / 2)
 
 const RULE = '━'.repeat(40)
+// NAV_ACTIVE's body column is only ≈38 chars wide — a 40-char RULE wraps
+// into 2-3 stacked bars at the bottom of the screen (confirmed
+// 2026-04-24 sim screenshot). Use a narrower rule in the nav body so
+// the separator renders as a single line.
+const NAV_RULE = '━'.repeat(24)
+// LOADING uses a thinner rule between WANDER and the subtitle per the
+// mockup's visual weight — `─` (U+2500) rather than `━` (U+2501).
+// See HANDOFF.md §2 C4.
+const LOADING_RULE = '─'.repeat(9)
 
 // ─── Public: Screen → SDK payload ──────────────────────────────────────
 
@@ -55,11 +77,11 @@ export function renderScreen(screen: Screen): RebuildPageContainer {
   switch (screen.name) {
     case 'LOADING':
       return singleText(
-        centeredBlock(['', '', 'WANDER', '', '', screen.message]),
+        centeredBlock(['', '', 'WANDER', LOADING_RULE, '', screen.message]),
       )
 
     case 'POI_LIST':
-      return renderPoiList(screen.pois, screen.cursorIndex ?? 0)
+      return renderPoiList(screen.pois, screen.hasMore, screen.cursorIndex ?? 0)
 
     case 'CONFIRM_EXIT':
       return singleText(
@@ -77,7 +99,10 @@ export function renderScreen(screen: Screen): RebuildPageContainer {
       )
 
     case 'POI_DETAIL':
-      return renderPoiDetail(screen.poi, screen.actions, screen.cursorIndex)
+      return renderPoiDetail(screen.poi)
+
+    case 'POI_ACTIONS':
+      return renderPoiActions(screen.poi, screen.actions, screen.cursorIndex)
 
     case 'NAV_ACTIVE':
       return renderNavActive(screen)
@@ -143,11 +168,13 @@ export function renderScreen(screen: Screen): RebuildPageContainer {
  */
 export function renderInPlaceUpdate(screen: Screen): TextContainerUpgrade | null {
   switch (screen.name) {
-    case 'POI_DETAIL':
+    case 'POI_ACTIONS':
+      // In-place upgrade for cursor moves on the action menu — cheaper
+      // than a full rebuild since only the body text changes.
       return new TextContainerUpgrade({
         containerID: ID_BODY,
-        containerName: 'detail-body',
-        content: detailBodyText(screen.poi, screen.actions, screen.cursorIndex),
+        containerName: 'actions-body',
+        content: actionsBodyText(screen.actions, screen.cursorIndex),
       })
 
     case 'WIKI_READ':
@@ -171,8 +198,23 @@ export function renderInPlaceUpdate(screen: Screen): TextContainerUpgrade | null
 
 // ─── Per-screen renderers ──────────────────────────────────────────────
 
-function renderPoiList(pois: Poi[], cursorIndex: number): RebuildPageContainer {
-  const items = pois.slice(0, 20).map((p, i) => poiListLine(p, i === cursorIndex))
+function renderPoiList(
+  pois: Poi[],
+  hasMore: boolean,
+  cursorIndex: number,
+): RebuildPageContainer {
+  // POI rows + optional "More" sentinel + always-on "Refresh" sentinel.
+  // Sentinel indices are pinned to (pois.length, pois.length+hasMore?1:0)
+  // so the reducer's tap routing matches; see onTap POI_LIST in state.ts.
+  const items: string[] = pois.slice(0, 20).map((p, i) =>
+    poiListLine(p, i === cursorIndex),
+  )
+  if (hasMore) {
+    const idx = pois.length
+    items.push(sentinelLine('▼ More results', idx === cursorIndex))
+  }
+  const refreshIdx = pois.length + (hasMore ? 1 : 0)
+  items.push(sentinelLine('↻ Refresh nearby', refreshIdx === cursorIndex))
   return new RebuildPageContainer({
     containerTotalNum: 1,
     listObject: [
@@ -199,6 +241,13 @@ function renderPoiList(pois: Poi[], cursorIndex: number): RebuildPageContainer {
   })
 }
 
+function sentinelLine(label: string, isCursor: boolean): string {
+  // Single-line sentinel — POI rows are two-line (name + metadata),
+  // so the sentinel sits visually flush after the last item.
+  const cursor = isCursor ? '> ' : '  '
+  return `${cursor}${label}`
+}
+
 function poiListLine(p: Poi, isCursor: boolean): string {
   // Two lines per item — name on top, distance + walk time below (left-
   // aligned). G2 fonts aren't monospace so true right-alignment via space
@@ -209,7 +258,62 @@ function poiListLine(p: Poi, isCursor: boolean): string {
   return `${cursor}${p.categoryIcon} ${name}\n     ${distance}  ·  ~${p.walkMinutes} min`
 }
 
-function renderPoiDetail(
+function renderPoiDetail(poi: Poi): RebuildPageContainer {
+  return new RebuildPageContainer({
+    containerTotalNum: 2,
+    textObject: [
+      new TextContainerProperty({
+        xPosition: 0,
+        yPosition: 0,
+        width: DISPLAY_WIDTH,
+        height: POI_DETAIL_HEADER_HEIGHT,
+        borderWidth: 0,
+        borderColor: 5,
+        borderRadius: 0,
+        paddingLength: 4,
+        containerID: ID_MAIN,
+        containerName: 'detail-header',
+        isEventCapture: 0,
+        content: detailHeaderText(poi),
+      }),
+      new TextContainerProperty({
+        xPosition: 0,
+        yPosition: POI_DETAIL_BODY_Y,
+        width: DISPLAY_WIDTH,
+        height: POI_DETAIL_BODY_HEIGHT,
+        borderWidth: 0,
+        borderColor: 5,
+        borderRadius: 0,
+        paddingLength: 4,
+        containerID: ID_BODY,
+        containerName: 'detail-body',
+        isEventCapture: 1,
+        content: detailBodyText(poi),
+      }),
+    ],
+  })
+}
+
+function detailHeaderText(poi: Poi): string {
+  // Mockup subtitle format: "★ Landmark · 0.3 mi NW · ~6 min walk"
+  // (HANDOFF.md §2 C2). The bearing label sits next to the distance so
+  // the user has a quick compass hint before they even open nav.
+  const dist = `${formatDistance(poi.distanceMiles)} ${bearingToCardinal(poi.bearingDegrees)}`
+  const min = `~${poi.walkMinutes} min`
+  return `${truncate(poi.name, CHARS_PER_LINE)}\n${poi.categoryIcon} ${poi.category}  ·  ${dist}  ·  ${min}`
+}
+
+function detailBodyText(poi: Poi): string {
+  const summary = poi.wikiSummary
+    ? truncate(poi.wikiSummary.replace(/\s+/g, ' '), 260)
+    : '(No description available.)'
+  // Hint lives at the bottom of the body so the summary isn't interrupted.
+  return [summary, '', RULE, '', '> Tap for options  ·  Double-tap to exit'].join('\n')
+}
+
+// ─── POI_ACTIONS ───────────────────────────────────────────────────────
+
+function renderPoiActions(
   poi: Poi,
   actions: PoiDetailAction[],
   cursorIndex: number,
@@ -227,9 +331,11 @@ function renderPoiDetail(
         borderRadius: 0,
         paddingLength: 4,
         containerID: ID_MAIN,
-        containerName: 'detail-header',
+        containerName: 'actions-header',
         isEventCapture: 0,
-        content: detailHeaderText(poi),
+        // Header is title-only here — no metadata row fighting for space,
+        // so 48px is plenty.
+        content: truncate(poi.name, CHARS_PER_LINE),
       }),
       new TextContainerProperty({
         xPosition: 0,
@@ -241,30 +347,19 @@ function renderPoiDetail(
         borderRadius: 0,
         paddingLength: 4,
         containerID: ID_BODY,
-        containerName: 'detail-body',
+        containerName: 'actions-body',
         isEventCapture: 1,
-        content: detailBodyText(poi, actions, cursorIndex),
+        content: actionsBodyText(actions, cursorIndex),
       }),
     ],
   })
 }
 
-function detailHeaderText(poi: Poi): string {
-  const dist = formatDistance(poi.distanceMiles)
-  const min = `~${poi.walkMinutes} min`
-  return `${truncate(poi.name, CHARS_PER_LINE)}\n${poi.categoryIcon} ${poi.category}  ·  ${dist}  ·  ${min}`
-}
-
-function detailBodyText(
-  poi: Poi,
+function actionsBodyText(
   actions: PoiDetailAction[],
   cursorIndex: number,
 ): string {
-  const summary = poi.wikiSummary
-    ? truncate(poi.wikiSummary.replace(/\s+/g, ' '), 200)
-    : '(No description available.)'
-
-  const lines = [summary, '', RULE, '']
+  const lines: string[] = ['']
   actions.forEach((a, i) => {
     const prefix = i === cursorIndex ? '> ' : '  '
     lines.push(prefix + ACTION_LABEL[a])
@@ -292,7 +387,7 @@ function renderNavActive(
         xPosition: 0,
         yPosition: 0,
         width: DISPLAY_WIDTH,
-        height: HEADER_HEIGHT,
+        height: NAV_HEADER_HEIGHT,
         borderWidth: 0,
         borderColor: 5,
         borderRadius: 0,
@@ -304,9 +399,9 @@ function renderNavActive(
       }),
       new TextContainerProperty({
         xPosition: 0,
-        yPosition: BODY_Y,
+        yPosition: NAV_BODY_Y,
         width: NAV_TEXT_WIDTH,
-        height: BODY_HEIGHT,
+        height: NAV_BODY_HEIGHT,
         borderWidth: 0,
         borderColor: 5,
         borderRadius: 0,
@@ -339,7 +434,7 @@ function navBodyText(screen: Extract<Screen, { name: 'NAV_ACTIVE' }>): string {
     return [
       '',
       'You have arrived!',
-      RULE,
+      NAV_RULE,
       '',
       truncate(screen.destination.name, NAV_BODY_CHARS_PER_LINE),
       '',
@@ -347,14 +442,24 @@ function navBodyText(screen: Extract<Screen, { name: 'NAV_ACTIVE' }>): string {
     ].join('\n')
   }
 
+  // NAV body layout per mockup (HANDOFF.md §2 C3):
+  //   Line 1: heading arrow + distance (prominent)
+  //   Line 2: ETA · BEARING (the "3-stat" completion — DISTANCE above)
+  //   Blank
+  //   Current step instruction (+ optional street line)
+  //   Blank
+  //   "Next: <preview>" when a next step exists
+  //   NAV_RULE + tap hints.
   const step = screen.route.steps[screen.currentStepIndex]
+  const nextStep = screen.route.steps[screen.currentStepIndex + 1]
   const remainingMeters = remainingDistanceMeters(screen)
-  const arrow = bearingToArrow(
-    headingToNextPoint(screen) ?? screen.destination.bearingDegrees,
-  )
+  const headingToDest = headingToNextPoint(screen) ?? screen.destination.bearingDegrees
+  const arrow = bearingToArrow(headingToDest)
+  const cardinal = bearingToCardinal(headingToDest)
 
   const lines = [
     `${arrow}  ${formatMeters(remainingMeters)}`,
+    `~${etaMinutes(remainingMeters)} min  ·  ${cardinal}`,
     '',
   ]
 
@@ -365,8 +470,23 @@ function navBodyText(screen: Extract<Screen, { name: 'NAV_ACTIVE' }>): string {
     }
   }
 
-  lines.push('', RULE, '', '> Tap to stop nav', '  Double-tap → list')
+  if (nextStep) {
+    lines.push('', `Next: ${truncate(nextStep.instruction, NAV_BODY_CHARS_PER_LINE - 6)}`)
+  }
+
+  lines.push('', NAV_RULE, '', '> Tap to stop nav', '  Double-tap → list')
   return lines.join('\n')
+}
+
+/**
+ * Convert remaining route distance into a rough walking ETA in minutes.
+ * ~84 m/min ≈ 1.4 m/s — the "casual walking" pace used across most
+ * pedestrian routing engines (OSRM, ORS defaults). Clamped to a floor
+ * of 1 minute so the UI never shows "~0 min" while the user is still
+ * some distance away.
+ */
+export function etaMinutes(remainingMeters: number): number {
+  return Math.max(1, Math.round(remainingMeters / 84))
 }
 
 function renderWikiRead(
@@ -455,7 +575,12 @@ function center(line: string, width: number): string {
 
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s
-  return s.slice(0, max - 1) + '…'
+  // Use ".." rather than the single U+2026 ellipsis glyph — the G2's
+  // LVGL fixed font has no glyph for U+2026 and renders it as an empty
+  // box. Teardown item §7-4 in HANDOFF_2026-04-24. Mirrors the
+  // server-side cleanText in api/wiki.ts which applies the same
+  // substitution on incoming Wikipedia text.
+  return s.slice(0, max - 2) + '..'
 }
 
 function formatDistance(miles: number): string {
@@ -511,6 +636,19 @@ export function bearingToArrow(deg: number): string {
   // 8 sectors of 45°, centred on each arrow direction (offset by 22.5°).
   const sector = Math.floor(((norm + 22.5) % 360) / 45)
   return ARROWS[sector]
+}
+
+const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+
+/**
+ * Map a bearing (0–360°) to a 2-letter cardinal string. Used in the
+ * POI_DETAIL subtitle (HANDOFF.md §2 C2 — mockup parity) so users see
+ * "0.3 mi NW" rather than a raw degree value.
+ */
+export function bearingToCardinal(deg: number): string {
+  const norm = ((deg % 360) + 360) % 360
+  const sector = Math.floor(((norm + 22.5) % 360) / 45)
+  return CARDINALS[sector]
 }
 
 function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {

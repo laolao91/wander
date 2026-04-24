@@ -108,18 +108,29 @@ export interface FetchPoisInput {
   radiusMiles?: number
   categories?: Category[]
   lang?: string
+  /** Page offset into the merged result set; defaults server-side to 0. */
+  offset?: number
   signal?: AbortSignal
 }
 
-export async function fetchPois(input: FetchPoisInput): Promise<Poi[]> {
+/** Wire shape per `api/poi.ts`. `hasMore` drives the "More results" sentinel. */
+export interface PoiPage {
+  items: Poi[]
+  hasMore: boolean
+}
+
+export async function fetchPois(input: FetchPoisInput): Promise<PoiPage> {
   const params = new URLSearchParams()
   params.set('lat', String(input.lat))
   params.set('lng', String(input.lng))
   if (input.radiusMiles != null) params.set('radius', String(input.radiusMiles))
   if (input.categories?.length) params.set('categories', input.categories.join(','))
   if (input.lang) params.set('lang', input.lang)
+  if (input.offset != null && input.offset > 0) {
+    params.set('offset', String(input.offset))
+  }
 
-  return getJson<Poi[]>('/poi', params, input.signal)
+  return getJson<PoiPage>('/poi', params, input.signal)
 }
 
 export interface FetchWikiInput {

@@ -29,16 +29,19 @@ export interface AppState {
   screen: Screen
   /** Last-known POI list, retained across detail/wiki/nav for back-nav. */
   poiList: Poi[]
+  /** Whether `/api/poi` flagged a further page available past `poiList`. */
+  poiListHasMore: boolean
   /** Last-known location. Refreshed on every fetch attempt. */
   position: { lat: number; lng: number } | null
   /** Pending refresh result while user is in non-POI_LIST screens. */
-  pendingPoiRefresh: Poi[] | null
+  pendingPoiRefresh: { pois: Poi[]; hasMore: boolean } | null
   settings: Settings
 }
 
 export const INITIAL_STATE: AppState = {
-  screen: { name: 'LOADING', message: 'Finding what is around you' },
+  screen: { name: 'LOADING', message: 'Discovering interesting things near you...' },
   poiList: [],
+  poiListHasMore: false,
   position: null,
   pendingPoiRefresh: null,
   settings: DEFAULT_SETTINGS,
@@ -67,8 +70,19 @@ export type Event =
   | { type: 'cursor-up' }
   | { type: 'cursor-down' }
   | { type: 'request-exit' } // bridge dispatches on double-tap from top-level
+  // POI_LIST sentinel actions (Phase 4d)
+  | { type: 'load-more' }
+  | { type: 'refresh-pois' }
   // System events
-  | { type: 'pois-loaded'; pois: Poi[]; isBackgroundRefresh: boolean }
+  | {
+      type: 'pois-loaded'
+      pois: Poi[]
+      hasMore: boolean
+      /** 'replace' overwrites the list (initial fetch / refresh).
+       *  'append' concatenates onto the existing list (load-more). */
+      mode: 'replace' | 'append'
+      isBackgroundRefresh: boolean
+    }
   | { type: 'pois-failed'; reason: 'location' | 'network' | 'empty' }
   | { type: 'route-loaded'; route: Route }
   | { type: 'route-failed' }
@@ -83,7 +97,11 @@ export type Event =
  * the next state. The reducer never executes these directly.
  */
 export type Effect =
-  | { type: 'fetch-pois' }
+  | {
+      type: 'fetch-pois'
+      offset: number
+      mode: 'replace' | 'append'
+    }
   | { type: 'fetch-route'; from: { lat: number; lng: number }; to: Poi }
   | { type: 'fetch-wiki'; title: string; lang: string | null }
   | { type: 'open-url'; url: string }
@@ -101,7 +119,13 @@ export interface ReducerResult {
 export function reduce(state: AppState, event: Event): ReducerResult {
   switch (event.type) {
     case 'pois-loaded':
-      return onPoisLoaded(state, event.pois, event.isBackgroundRefresh)
+      return onPoisLoaded(
+        state,
+        event.pois,
+        event.hasMore,
+        event.mode,
+        event.isBackgroundRefresh,
+      )
 
     case 'pois-failed':
       return next(state, errorScreenForReason(event.reason))
@@ -132,11 +156,17 @@ export function reduce(state: AppState, event: Event): ReducerResult {
     case 'settings-changed':
       return {
         state: { ...state, settings: { ...state.settings, ...event.settings } },
-        effects: [{ type: 'fetch-pois' }],
+        effects: [{ type: 'fetch-pois', offset: 0, mode: 'replace' }],
       }
 
     case 'retry':
       return onRetry(state)
+
+    case 'load-more':
+      return onLoadMore(state)
+
+    case 'refresh-pois':
+      return onRefreshPois(state)
 
     case 'tap':
       return onTap(state, event.itemIndex)
@@ -166,29 +196,92 @@ function onRequestExit(state: AppState): ReducerResult {
 function onPoisLoaded(
   state: AppState,
   pois: Poi[],
+  hasMore: boolean,
+  mode: 'replace' | 'append',
   isBackgroundRefresh: boolean,
 ): ReducerResult {
+  // ─── Append (load-more) ──────────────────────────────────────────────
+  // Append-mode is always foreground-initiated by the user tapping "More",
+  // but the response can land after they've navigated to POI_DETAIL/etc.
+  // We always merge into poiList so back-navigation shows the longer list,
+  // and only update the live POI_LIST screen when that's where they are.
+  if (mode === 'append') {
+    const merged = [...state.poiList, ...pois]
+    const nextState = {
+      ...state,
+      poiList: merged,
+      poiListHasMore: hasMore,
+    }
+    if (state.screen.name === 'POI_LIST') {
+      // Cursor stays at the previous "More" sentinel index — which now
+      // points at the first newly-appended POI. Natural for scroll-down.
+      const prevPoiCount = state.poiList.length
+      return next(nextState, {
+        name: 'POI_LIST',
+        pois: merged,
+        hasMore,
+        cursorIndex: prevPoiCount,
+      })
+    }
+    return { state: nextState, effects: [] }
+  }
+
+  // ─── Replace (initial fetch / refresh / settings change) ─────────────
   if (pois.length === 0) {
     const filtersAreNarrow =
       state.settings.radiusMiles < 1.5 ||
       state.settings.categories.length < ALL_CATEGORIES.length
-    return next(state, { name: 'ERROR_EMPTY', filtersAreNarrow })
+    return next(
+      { ...state, poiList: [], poiListHasMore: false, pendingPoiRefresh: null },
+      { name: 'ERROR_EMPTY', filtersAreNarrow },
+    )
   }
 
   // Background refresh: only swap the list in if user is on POI_LIST,
   // otherwise hold the new data until they navigate back.
   if (isBackgroundRefresh && state.screen.name !== 'POI_LIST') {
-    return { state: { ...state, pendingPoiRefresh: pois }, effects: [] }
+    return {
+      state: { ...state, pendingPoiRefresh: { pois, hasMore } },
+      effects: [],
+    }
   }
 
   return next(
-    { ...state, poiList: pois, pendingPoiRefresh: null },
-    { name: 'POI_LIST', pois, cursorIndex: 0 },
+    {
+      ...state,
+      poiList: pois,
+      poiListHasMore: hasMore,
+      pendingPoiRefresh: null,
+    },
+    { name: 'POI_LIST', pois, hasMore, cursorIndex: 0 },
   )
 }
 
+function onLoadMore(state: AppState): ReducerResult {
+  // Only meaningful from POI_LIST when there's more to fetch.
+  if (state.screen.name !== 'POI_LIST' || !state.screen.hasMore) {
+    return noop(state)
+  }
+  return {
+    state,
+    effects: [
+      { type: 'fetch-pois', offset: state.poiList.length, mode: 'append' },
+    ],
+  }
+}
+
+function onRefreshPois(state: AppState): ReducerResult {
+  // User-initiated refresh from the POI_LIST sentinel. Surface a LOADING
+  // screen so they get visual feedback while the fetch is in flight; the
+  // 'pois-loaded' event will route back to POI_LIST.
+  return goLoading(state, 'fetch-pois')
+}
+
 function onRouteLoaded(state: AppState, route: Route): ReducerResult {
-  if (state.screen.name !== 'POI_DETAIL') return noop(state)
+  // Route fetches only originate from the POI_ACTIONS screen (the
+  // "Navigate" action). If the user has navigated away before the
+  // response lands, drop it on the floor.
+  if (state.screen.name !== 'POI_ACTIONS') return noop(state)
   return next(
     state,
     {
@@ -204,7 +297,10 @@ function onRouteLoaded(state: AppState, route: Route): ReducerResult {
 }
 
 function onWikiLoaded(state: AppState, article: WikiArticle): ReducerResult {
-  if (state.screen.name !== 'POI_DETAIL') return noop(state)
+  // Wiki fetches only originate from POI_ACTIONS ("Read More" action).
+  // On exit, WIKI_READ returns to POI_DETAIL (not POI_ACTIONS) so the
+  // user sees the summary and can re-tap if they want actions again.
+  if (state.screen.name !== 'POI_ACTIONS') return noop(state)
   return next(state, {
     name: 'WIKI_READ',
     fromPoi: state.screen.poi,
@@ -255,41 +351,53 @@ function onTap(state: AppState, itemIndex?: number): ReducerResult {
       // event sometimes lands as a textEvent/sysEvent with no index, so
       // fall back to our tracked cursor.
       const idx = itemIndex ?? state.screen.cursorIndex ?? 0
-      const poi = state.screen.pois[idx]
-      if (!poi) return noop(state)
-      return next(state, {
-        name: 'POI_DETAIL',
-        poi,
-        actions: actionsForPoi(poi),
-        cursorIndex: 0,
-      })
+      const numPois = state.screen.pois.length
+      // POI rows occupy 0..numPois-1. The "More results" sentinel sits
+      // at numPois iff hasMore. The "Refresh nearby" sentinel always
+      // sits at the very end. See WANDER_BUILD_SPEC §6.6 / Phase 4d.
+      if (idx < numPois) {
+        const poi = state.screen.pois[idx]
+        if (!poi) return noop(state)
+        return next(state, { name: 'POI_DETAIL', poi })
+      }
+      const moreIdx = state.screen.hasMore ? numPois : -1
+      const refreshIdx = numPois + (state.screen.hasMore ? 1 : 0)
+      if (idx === moreIdx) {
+        return reduce(state, { type: 'load-more' })
+      }
+      if (idx === refreshIdx) {
+        return reduce(state, { type: 'refresh-pois' })
+      }
+      return noop(state)
     }
 
-    case 'POI_DETAIL': {
+    case 'POI_DETAIL':
+      // Single-tap opens the action menu. Actions are computed fresh
+      // from the POI so OSM-only entries (no wiki/website) don't show
+      // phantom slots in the cursor.
+      return next(state, {
+        name: 'POI_ACTIONS',
+        poi: state.screen.poi,
+        actions: actionsForPoi(state.screen.poi),
+        cursorIndex: 0,
+      })
+
+    case 'POI_ACTIONS': {
       const action = state.screen.actions[state.screen.cursorIndex]
       if (!action) return noop(state)
       return executePoiDetailAction(state, state.screen.poi, action)
     }
 
     case 'WIKI_READ':
-      // Tap returns to POI_DETAIL.
-      return next(state, {
-        name: 'POI_DETAIL',
-        poi: state.screen.fromPoi,
-        actions: actionsForPoi(state.screen.fromPoi),
-        cursorIndex: 0,
-      })
+      // Tap returns to POI_DETAIL (the read-only view) — user can
+      // re-tap from there to reach POI_ACTIONS again if they want.
+      return next(state, { name: 'POI_DETAIL', poi: state.screen.fromPoi })
 
     case 'NAV_ACTIVE':
       // Tap stops navigation, returns to POI_DETAIL.
       return next(
         state,
-        {
-          name: 'POI_DETAIL',
-          poi: state.screen.destination,
-          actions: actionsForPoi(state.screen.destination),
-          cursorIndex: 0,
-        },
+        { name: 'POI_DETAIL', poi: state.screen.destination },
         [{ type: 'stop-nav-watch' }],
       )
 
@@ -310,6 +418,11 @@ function onTap(state: AppState, itemIndex?: number): ReducerResult {
 
 function onBack(state: AppState): ReducerResult {
   switch (state.screen.name) {
+    case 'POI_ACTIONS':
+      // POI_ACTIONS is a sub-screen of POI_DETAIL; backing out returns
+      // to the detail view rather than all the way to the list.
+      return next(state, { name: 'POI_DETAIL', poi: state.screen.poi })
+
     case 'POI_DETAIL':
     case 'WIKI_READ':
     case 'ERROR_NETWORK':
@@ -336,18 +449,31 @@ function onBack(state: AppState): ReducerResult {
 }
 
 function onCursorMove(state: AppState, delta: number): ReducerResult {
-  if (state.screen.name === 'POI_DETAIL') {
+  if (state.screen.name === 'POI_ACTIONS') {
     const max = state.screen.actions.length - 1
     const nextIndex = clamp(state.screen.cursorIndex + delta, 0, max)
     if (nextIndex === state.screen.cursorIndex) return noop(state)
     return next(state, { ...state.screen, cursorIndex: nextIndex })
   }
   if (state.screen.name === 'POI_LIST') {
-    const max = state.screen.pois.length - 1
+    // Cursor walks through both POI rows and the trailing sentinels
+    // (More + Refresh). hasMore controls whether More is rendered;
+    // Refresh is always present.
+    const sentinels = (state.screen.hasMore ? 1 : 0) + 1
+    const max = state.screen.pois.length + sentinels - 1
     const cur = state.screen.cursorIndex ?? 0
     const nextIndex = clamp(cur + delta, 0, max)
     if (nextIndex === cur) return noop(state)
     return next(state, { ...state.screen, cursorIndex: nextIndex })
+  }
+  if (state.screen.name === 'WIKI_READ') {
+    // Scroll advances pageIndex so users can read past the first page of
+    // the Wikipedia article. Without this, "1/N" is shown but the user
+    // is stuck on page 1 — regression observed 2026-04-24 sim run.
+    const max = state.screen.article.pages.length - 1
+    const nextIndex = clamp(state.screen.pageIndex + delta, 0, max)
+    if (nextIndex === state.screen.pageIndex) return noop(state)
+    return next(state, { ...state.screen, pageIndex: nextIndex })
   }
   if (state.screen.name === 'CONFIRM_EXIT') {
     const nextIndex = clamp(state.screen.cursorIndex + delta, 0, 1)
@@ -404,18 +530,28 @@ function actionsForPoi(poi: Poi): PoiDetailAction[] {
 }
 
 function applyPendingRefresh(state: AppState): ReducerResult {
-  const pois = state.pendingPoiRefresh ?? state.poiList
+  // If there's a pending refresh, prefer it; otherwise fall back to the
+  // last-known list so back-navigation always lands on POI_LIST with the
+  // freshest data we have.
+  const pending = state.pendingPoiRefresh
+  const pois = pending?.pois ?? state.poiList
+  const hasMore = pending ? pending.hasMore : state.poiListHasMore
   return next(
-    { ...state, poiList: pois, pendingPoiRefresh: null },
-    { name: 'POI_LIST', pois, cursorIndex: 0 },
+    {
+      ...state,
+      poiList: pois,
+      poiListHasMore: hasMore,
+      pendingPoiRefresh: null,
+    },
+    { name: 'POI_LIST', pois, hasMore, cursorIndex: 0 },
   )
 }
 
 function goLoading(state: AppState, effect: 'fetch-pois' | null): ReducerResult {
   return next(
     state,
-    { name: 'LOADING', message: 'Loading' },
-    effect ? [{ type: effect }] : [],
+    { name: 'LOADING', message: 'Discovering interesting things near you...' },
+    effect ? [{ type: effect, offset: 0, mode: 'replace' }] : [],
   )
 }
 

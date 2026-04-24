@@ -2,17 +2,32 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { resolveLang } from './_lib/lang.js'
 
 /**
- * GET /api/poi?lat=&lng=&radius=&categories=
+ * GET /api/poi?lat=&lng=&radius=&categories=&offset=
  *
  * Fetches + merges nearby points of interest from Wikipedia GeoSearch
- * and OpenStreetMap Overpass. Returns the closest 20, sorted ascending
- * by walking distance.
+ * and OpenStreetMap Overpass. Sorted ascending by walking distance.
+ *
+ * Response shape: `{ items: Poi[], hasMore: boolean }`.
+ *   - `items` is the page slice [offset, offset+PAGE_SIZE).
+ *   - `hasMore` is true iff a strictly later page would contain at least
+ *     one item — the client uses this to decide whether to render the
+ *     "More results" sentinel on POI_LIST. See WANDER_BUILD_SPEC.md §6.6.
+ *
+ * Pagination is best-effort: cursor stability isn't guaranteed across
+ * calls because the underlying Wikipedia/Overpass response sets shift
+ * (different OSM mirrors return slightly different result orderings).
+ * For Phase 4d we accept the trade — pages are mostly stable and the
+ * impact of a small shift mid-walk is minimal.
  *
  * See WANDER_BUILD_SPEC.md §4 and §5.
  */
 
 const UA = 'Wander/1.0 (Even Realities G2 companion app; steven.lao30@gmail.com)'
-const MAX_RESULTS = 20
+const PAGE_SIZE = 20
+// Hard upstream cap so a malicious or buggy client can't ask for an
+// effectively unbounded merge+sort. Two pages past the spec radius is
+// already more POIs than a pedestrian needs in a single browse session.
+const MAX_RESULTS_TOTAL = 60
 const DEFAULT_RADIUS_MI = 0.75
 const MAX_RADIUS_MI = 1.5
 const MILES_TO_METERS = 1609.344
@@ -123,9 +138,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   )
   const radiusM = radiusMi * MILES_TO_METERS
 
+  const offset = clamp(
+    Number.isFinite(parseInt(req.query.offset as string, 10))
+      ? parseInt(req.query.offset as string, 10)
+      : 0,
+    0,
+    MAX_RESULTS_TOTAL,
+  )
+
   const enabled = parseCategories(req.query.categories)
   if (enabled.size === 0) {
-    res.status(200).json([])
+    res.status(200).json({ items: [], hasMore: false })
     return
   }
 
@@ -142,15 +165,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       wantsOverpass ? fetchOverpass(lat, lng, radiusM, enabled) : Promise.resolve([]),
     ])
 
-    const merged = dedupe([...wiki, ...osm])
+    const allMerged = dedupe([...wiki, ...osm])
       .filter((p) => enabled.has(p.category))
       .map((p) => enrichDistance(p, lat, lng))
       .sort((a, b) => a.distanceMeters - b.distanceMeters)
-      .slice(0, MAX_RESULTS)
+      .slice(0, MAX_RESULTS_TOTAL)
+
+    const items = allMerged.slice(offset, offset + PAGE_SIZE)
+    const hasMore = offset + PAGE_SIZE < allMerged.length
 
     res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=300')
     res.setHeader('Vary', 'Accept-Language')
-    res.status(200).json(merged)
+    res.status(200).json({ items, hasMore })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown error'
     res.status(502).json({ error: 'POI fetch failed', detail: msg })

@@ -26,7 +26,7 @@ void Sys_ItemEvent
 function poiListState(): AppState {
   return {
     ...INITIAL_STATE,
-    screen: { name: 'POI_LIST', pois: [] },
+    screen: { name: 'POI_LIST', pois: [], hasMore: false },
   }
 }
 
@@ -51,8 +51,6 @@ function detailState(): AppState {
         websiteUrl: null,
         source: 'osm',
       },
-      actions: ['navigate', 'back'],
-      cursorIndex: 0,
     },
   }
 }

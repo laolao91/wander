@@ -6,7 +6,7 @@
  *
  *   1. Boot the SDK (`waitForEvenAppBridge`, `createStartUpPageContainer`).
  *   2. Translate physical glasses events (CLICK / SCROLL_TOP / etc.) into
- *      reducer events (`tap`, `cursor-up`, …).
+ *      reducer events (`tap`, `cursor-up`, ...).
  *   3. After every dispatch, push the new screen to the SDK — preferring
  *      `textContainerUpgrade` for in-place updates and falling back to
  *      `rebuildPageContainer` when the screen layout changes.
@@ -82,7 +82,7 @@ export async function initGlasses(): Promise<void> {
   )
 
   // Kick off the first POI fetch and start the background refresh timer.
-  runner.runAll([{ type: 'fetch-pois' }])
+  runner.runAll([{ type: 'fetch-pois', offset: 0, mode: 'replace' }])
   const refreshTimer = setInterval(() => {
     void runner.backgroundRefresh()
   }, BACKGROUND_REFRESH_MS)

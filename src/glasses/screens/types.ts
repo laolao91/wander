@@ -14,6 +14,7 @@ export type ScreenName =
   | 'LOADING'
   | 'POI_LIST'
   | 'POI_DETAIL'
+  | 'POI_ACTIONS'
   | 'NAV_ACTIVE'
   | 'WIKI_READ'
   | 'ERROR_LOCATION'
@@ -26,6 +27,7 @@ export type Screen =
   | LoadingScreen
   | PoiListScreen
   | PoiDetailScreen
+  | PoiActionsScreen
   | NavActiveScreen
   | WikiReadScreen
   | ErrorLocationScreen
@@ -41,21 +43,38 @@ export interface LoadingScreen {
 export interface PoiListScreen {
   name: 'POI_LIST'
   pois: Poi[]
+  /**
+   * True when at least one more page exists past `pois.length`.
+   * Drives whether the "More results" sentinel is appended after the
+   * POI rows. The "Refresh nearby" sentinel is always rendered.
+   */
+  hasMore: boolean
   /** Highlight cursor — used as the tap target when the SDK doesn't pass an itemIndex. */
   cursorIndex?: number
 }
 
 /**
- * Detail/action menu for one POI. Cursor 0–3 corresponds to the four
- * actions: Navigate, Open in Safari, Read More, Back to List.
- *
- * "Open in Safari" is hidden when `poi.websiteUrl === null`; the cursor
- * still cycles 0–3 over the remaining actions, with index 1 mapping to
- * Read More in that case. The reducer collapses the action set, so
- * cursor bounds always reflect what's actually visible.
+ * Read-only detail view for one POI: title + metadata in the header,
+ * wiki summary in the body. Single-tap advances to POI_ACTIONS where the
+ * cursor lives; double-tap raises CONFIRM_EXIT. The detail screen
+ * intentionally has no cursor — splitting actions out frees the header
+ * from cramming line 2 and removes the action-vs-wiki scroll conflict
+ * reported on 2026-04-20.
  */
 export interface PoiDetailScreen {
   name: 'POI_DETAIL'
+  poi: Poi
+}
+
+/**
+ * Action menu for a POI. Cursor indexes into `actions`, which is
+ * computed from the POI at tap time (Navigate always; Open in Safari
+ * iff `poi.websiteUrl`; Read More iff `poi.wikiTitle`; Back to List
+ * always). The set is collapsed so cursor bounds reflect exactly what's
+ * rendered — no invisible slots.
+ */
+export interface PoiActionsScreen {
+  name: 'POI_ACTIONS'
   poi: Poi
   actions: PoiDetailAction[]
   cursorIndex: number
@@ -148,10 +167,16 @@ export const ALLOWED_TRANSITIONS: Record<ScreenName, ReadonlySet<ScreenName>> = 
     'CONFIRM_EXIT',
   ]),
   POI_DETAIL: new Set([
-    'POI_LIST', // back
-    'NAV_ACTIVE', // navigate
-    'WIKI_READ', // read more
-    'ERROR_NETWORK',
+    'POI_ACTIONS', // single-tap opens the action menu
+    'POI_LIST', // back (pending-refresh applied here)
+    'ERROR_NETWORK', // failure routed back through the detail screen
+  ]),
+  POI_ACTIONS: new Set([
+    'POI_DETAIL', // cancelling actions returns to the detail view
+    'POI_LIST', // "Back to List" action (applyPendingRefresh)
+    'NAV_ACTIVE', // navigate action → route-loaded
+    'WIKI_READ', // read-more action → wiki-loaded
+    'ERROR_NETWORK', // route/wiki failures
     'ERROR_LOCATION', // navigate tapped without GPS
   ]),
   NAV_ACTIVE: new Set([

@@ -223,6 +223,121 @@ export function trianglePath(
   ]
 }
 
+// ─── Cardinal reference overlay ────────────────────────────────────────
+
+/**
+ * Edge-midpoint tick marks for N/S/E/W. Each tick is a short line segment
+ * pointing inward from the canvas edge, returned as a pair of canvas
+ * points (edge → inward). Pure so we can assert positions in tests
+ * without a canvas.
+ *
+ * Why ticks instead of a full grid: on a 240×120 canvas quantized to
+ * gray4, faint grid lines either vanish or look like noise next to the
+ * dashed route. Four tick marks at the edge midpoints give the user an
+ * unambiguous orientation reference while leaving the interior clean.
+ * Phase 4b / §6.4 design note.
+ */
+export function cardinalTicks(
+  canvasWidth = MINIMAP_WIDTH,
+  canvasHeight = MINIMAP_HEIGHT,
+  length = 4,
+): {
+  N: [CanvasPoint, CanvasPoint]
+  S: [CanvasPoint, CanvasPoint]
+  E: [CanvasPoint, CanvasPoint]
+  W: [CanvasPoint, CanvasPoint]
+} {
+  const midX = canvasWidth / 2
+  const midY = canvasHeight / 2
+  return {
+    N: [
+      { x: midX, y: 0 },
+      { x: midX, y: length },
+    ],
+    S: [
+      { x: midX, y: canvasHeight - length },
+      { x: midX, y: canvasHeight },
+    ],
+    W: [
+      { x: 0, y: midY },
+      { x: length, y: midY },
+    ],
+    E: [
+      { x: canvasWidth - length, y: midY },
+      { x: canvasWidth, y: midY },
+    ],
+  }
+}
+
+/**
+ * North-arrow glyph anchored in the top-right corner: an upward-pointing
+ * triangle with a text "N" label beside it. Returns the triangle vertices
+ * and the label anchor point so we can test placement without touching a
+ * canvas.
+ *
+ * The triangle sits roughly 12px from the right edge and 4px from the top
+ * so the glyph doesn't visually fight the E tick at the right-center edge
+ * (which is ~56px away at canvas midpoint).
+ */
+export function northArrow(
+  canvasWidth = MINIMAP_WIDTH,
+): {
+  triangle: [CanvasPoint, CanvasPoint, CanvasPoint]
+  label: CanvasPoint
+} {
+  const tipX = canvasWidth - 14
+  const tipY = 3
+  const size = 5
+  return {
+    triangle: [
+      { x: tipX, y: tipY },
+      { x: tipX - size, y: tipY + size * 1.4 },
+      { x: tipX + size, y: tipY + size * 1.4 },
+    ],
+    label: { x: canvasWidth - 5, y: tipY + size * 1.4 },
+  }
+}
+
+/**
+ * Paint the cardinal reference layer — four edge tick marks + the N
+ * arrow + label in the top-right. Drawn in a dim grey so the route
+ * (white) sits clearly above it after gray4 quantization.
+ */
+function drawCardinalReference(
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  canvasWidth: number,
+  canvasHeight: number,
+): void {
+  const DIM = '#666'
+  const BRIGHT = '#888'
+
+  // Ticks.
+  ctx.strokeStyle = DIM
+  ctx.lineWidth = 1
+  const ticks = cardinalTicks(canvasWidth, canvasHeight)
+  for (const pair of [ticks.N, ticks.S, ticks.W, ticks.E]) {
+    ctx.beginPath()
+    ctx.moveTo(pair[0].x, pair[0].y)
+    ctx.lineTo(pair[1].x, pair[1].y)
+    ctx.stroke()
+  }
+
+  // North arrow glyph (triangle + "N" label).
+  const arrow = northArrow(canvasWidth)
+  ctx.fillStyle = BRIGHT
+  ctx.beginPath()
+  ctx.moveTo(arrow.triangle[0].x, arrow.triangle[0].y)
+  ctx.lineTo(arrow.triangle[1].x, arrow.triangle[1].y)
+  ctx.lineTo(arrow.triangle[2].x, arrow.triangle[2].y)
+  ctx.closePath()
+  ctx.fill()
+
+  ctx.font = 'bold 9px sans-serif'
+  ctx.textAlign = 'right'
+  ctx.textBaseline = 'top'
+  ctx.fillText('N', arrow.label.x, arrow.label.y)
+}
+
 // ─── Drawing inputs ────────────────────────────────────────────────────
 
 export interface MinimapInput {
@@ -273,6 +388,11 @@ export function drawMinimap(
   // Background.
   ctx.fillStyle = '#000'
   ctx.fillRect(0, 0, canvasWidth, canvasHeight)
+
+  // Cardinal reference overlay — drawn first so the route + markers sit
+  // on top. Bug H / Phase 4b. Works even when there's no route data yet
+  // (user sees orientation even on an empty bounds state).
+  drawCardinalReference(ctx, canvasWidth, canvasHeight)
 
   const geom = geometryAsLatLng(input.geometry)
   // Always include destination + position in the bbox so they're visible.
