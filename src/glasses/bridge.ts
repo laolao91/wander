@@ -38,11 +38,14 @@ import {
 const BACKGROUND_REFRESH_MS = 5 * 60 * 1000
 
 // Scroll-cooldown window. Spec §17: the G2 firmware can double-fire a
-// single R1-ring or temple gesture at scroll boundaries. A 300ms window
-// is enough to absorb those bounces without making intentional scrolls
-// feel laggy. Direction-agnostic: a fast reversal within 300ms is
-// almost always a bounce, not a user action.
-const SCROLL_COOLDOWN_MS = 300
+// single R1-ring or temple gesture at scroll boundaries. We absorb those
+// bounces but err on the side of letting legitimate scrolls through —
+// field-test 2026-04-24 reported "scrolling feels laggy resulting in
+// misinputs" at 300ms, so we tightened to 150ms. If real bounces leak
+// through at 150, raise; if scrolling still feels sluggish, drop further.
+// Direction-agnostic: a fast reversal within the window is treated as a
+// bounce, not a user action.
+const SCROLL_COOLDOWN_MS = 150
 let _lastScrollAt = 0
 
 /** Test-only: reset module-level runtime state between test cases. */

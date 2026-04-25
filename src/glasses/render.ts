@@ -369,7 +369,13 @@ function actionsBodyText(
 
 const ACTION_LABEL: Record<PoiDetailAction, string> = {
   navigate: 'Navigate',
-  safari: 'Open in Safari',
+  // The EvenHub WebView opens external URLs inside its own in-app
+  // browser — not in Safari and not in the phone's default browser.
+  // "Open on Phone" is the closest accurate label for what the user
+  // actually sees. Field-test 2026-04-24 confirmed the in-app browser
+  // also captures input, so the glasses cursor is "locked" while the
+  // browser overlay is up. (Tracked for next session.)
+  safari: 'Open on Phone',
   'read-more': 'Read More',
   back: 'Back to List',
 }
@@ -589,8 +595,17 @@ function formatDistance(miles: number): string {
 }
 
 function formatMeters(m: number): string {
-  if (m < 1000) return `${Math.round(m)} m`
-  return `${(m / 1000).toFixed(2)} km`
+  // Imperial-first display per field-test 2026-04-24: US users found
+  // "79 m" non-intuitive on the NAV body. POI_DETAIL header already
+  // uses formatDistance(miles), so this brings NAV in line.
+  // Threshold: under 0.1 mi → feet (rounded to 5 ft for visual stability
+  // as the position updates), otherwise miles to 2 decimals.
+  const miles = m / 1609.344
+  if (miles < 0.1) {
+    const feet = Math.round((m * 3.28084) / 5) * 5
+    return `${feet} ft`
+  }
+  return `${miles.toFixed(2)} mi`
 }
 
 // ─── Navigation math (text-only NAV_ACTIVE) ────────────────────────────

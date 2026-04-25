@@ -320,7 +320,7 @@ describe('renderScreen POI_DETAIL', () => {
     expect(body).toContain('Tap for options')
     // Action labels moved to POI_ACTIONS — they must NOT appear here.
     expect(body).not.toContain('Navigate')
-    expect(body).not.toContain('Open in Safari')
+    expect(body).not.toContain('Open on Phone')
     expect(body).not.toContain('Read More')
     expect(body).not.toContain('Back to List')
   })
@@ -362,7 +362,7 @@ describe('renderScreen POI_ACTIONS', () => {
   it('body lists all 4 actions with the cursor on the first by default', () => {
     const body = renderScreen(screen).textObject?.[1].content ?? ''
     expect(body).toMatch(/> Navigate/)
-    expect(body).toContain('Open in Safari')
+    expect(body).toContain('Open on Phone')
     expect(body).toContain('Read More')
     expect(body).toContain('Back to List')
   })
@@ -384,7 +384,7 @@ describe('renderScreen POI_ACTIONS', () => {
     const body = out.textObject?.[1].content ?? ''
     expect(body).toContain('Navigate')
     expect(body).toContain('Back to List')
-    expect(body).not.toContain('Open in Safari')
+    expect(body).not.toContain('Open on Phone')
     expect(body).not.toContain('Read More')
   })
 })
@@ -465,7 +465,8 @@ describe('renderScreen NAV_ACTIVE', () => {
 
   it('falls back to total route distance when position is null', () => {
     const out = renderScreen({ ...baseNav, position: null })
-    expect(out.textObject?.[1].content).toContain('480 m')
+    // 480 m → 0.30 mi (imperial display per field-test 2026-04-24)
+    expect(out.textObject?.[1].content).toMatch(/0\.30 mi/)
   })
 
   it('shows "You have arrived!" when arrived is true', () => {
@@ -474,14 +475,15 @@ describe('renderScreen NAV_ACTIVE', () => {
     expect(body).toContain('Tap to return')
   })
 
-  it('formats distance in km when over 1000m', () => {
+  it('formats long distances in miles', () => {
     const farPoi = makePoi({ lat: 40.85, lng: -73.85 })
     const out = renderScreen({
       ...baseNav,
       destination: farPoi,
       position: { lat: 40.7700, lng: -73.9700 },
     })
-    expect(out.textObject?.[1].content).toMatch(/\d+\.\d{2} km/)
+    // Imperial display: anything ≥ 0.1 mi shows as "N.NN mi"
+    expect(out.textObject?.[1].content).toMatch(/\d+\.\d{2} mi/)
   })
 })
 
@@ -575,7 +577,7 @@ describe('renderInPlaceUpdate', () => {
     })
     expect(u).not.toBeNull()
     expect(u?.containerID).toBe(ID_BODY)
-    expect(u?.content).toMatch(/> Open in Safari/)
+    expect(u?.content).toMatch(/> Open on Phone/)
   })
 
   it('returns the new page text for WIKI_READ', () => {
