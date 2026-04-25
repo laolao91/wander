@@ -140,7 +140,20 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   radiusMiles: 0.75,
-  categories: ['landmark', 'park', 'museum', 'religion', 'food'],
+  // Default to all 8 categories until the Phone Settings UI ships
+  // (Phase 5-UI). Field-test 2026-04-25 §7 confirmed Settings is still
+  // a placeholder, so the on-glass result set should be as wide as
+  // possible by default.
+  categories: [
+    'landmark',
+    'park',
+    'museum',
+    'religion',
+    'art',
+    'library',
+    'food',
+    'nightlife',
+  ],
   lang: null,
 }
 

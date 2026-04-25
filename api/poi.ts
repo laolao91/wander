@@ -504,8 +504,12 @@ function bearing(lat1: number, lng1: number, lat2: number, lng2: number): number
 
 function parseCategories(raw: unknown): Set<Category> {
   if (typeof raw !== 'string' || !raw.trim()) {
-    // Default set per spec §5
-    return new Set(['landmark', 'park', 'museum', 'religion', 'food'])
+    // Default to all 8 categories — matches the client's
+    // DEFAULT_SETTINGS so the server response is consistent whether the
+    // client sends `categories=` or relies on the server fallback.
+    // Field-test 2026-04-25 surfaced that the prior 5-category default
+    // silently dropped art/library/nightlife results.
+    return new Set(ALL_CATEGORIES)
   }
   const set = new Set<Category>()
   for (const token of raw.split(',').map((s) => s.trim().toLowerCase())) {
