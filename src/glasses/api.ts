@@ -11,7 +11,18 @@
  */
 
 const API_BASE = '/api'
-const DEFAULT_TIMEOUT_MS = 12000
+// Field-test 2026-04-25 §3.1: glasses observed "Fetching nearby
+// places..." stuck for 1+ minute. Vercel Hobby caps function execution
+// at 10s, so any wallclock past ~12s on the client means the request
+// will never produce a useful response. Two-layer protection:
+//   1. AbortController on the fetch (10s) — gives the platform a chance
+//      to cancel the underlying socket.
+//   2. Outer Promise.race wallclock (12s) — guarantees the caller hears
+//      back even if the WebView's fetch ignores `signal.aborted`. Real
+//      hardware does sometimes ignore it; the race is the only way to
+//      keep ERROR_NETWORK reachable.
+const FETCH_ABORT_MS = 10000
+const FETCH_WALLCLOCK_MS = 12000
 
 // ─── Wire types (match server response shapes from API.md) ─────────────
 
@@ -175,25 +186,60 @@ async function getJson<T>(
 ): Promise<T> {
   const url = `${API_BASE}${path}?${params.toString()}`
 
-  // Compose timeout with caller's signal so either can abort the request.
+  // Layer 1: AbortController + caller's signal.
   const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT_MS)
+  const abortTimer = setTimeout(() => ctrl.abort(), FETCH_ABORT_MS)
   const onExternalAbort = () => ctrl.abort()
   externalSignal?.addEventListener('abort', onExternalAbort)
 
+  // Layer 2: outer wallclock race. Resolves to a sentinel after
+  // FETCH_WALLCLOCK_MS, throwing on the caller side regardless of
+  // whether the fetch ever completes. Belt-and-braces for WebView
+  // platforms that ignore AbortSignal.
+  const wallclockSignal: unique symbol = Symbol('wallclock') as never
+  let wallclockTimer: ReturnType<typeof setTimeout> | undefined
+  const wallclock = new Promise<typeof wallclockSignal>((resolve) => {
+    wallclockTimer = setTimeout(() => resolve(wallclockSignal), FETCH_WALLCLOCK_MS)
+  })
+
   try {
-    const r = await fetch(url, { signal: ctrl.signal })
+    const fetchPromise = fetch(url, { signal: ctrl.signal })
+    const winner = await Promise.race([fetchPromise, wallclock])
+    if (winner === wallclockSignal) {
+      // Best-effort cancel; some WebViews ignore this but it doesn't hurt.
+      ctrl.abort()
+      throw new ApiError(
+        `API ${path} timed out after ${FETCH_WALLCLOCK_MS}ms`,
+        path,
+        0,
+        'wallclock',
+      )
+    }
+    const r = winner as Response
     if (!r.ok) {
       const detail = await safeText(r)
       throw new ApiError(`API ${path} returned ${r.status}`, path, r.status, detail)
     }
-    return (await r.json()) as T
+    // Race the JSON parse too — body streaming can hang independently of
+    // the initial response.
+    const jsonRace = await Promise.race([r.json(), wallclock])
+    if (jsonRace === wallclockSignal) {
+      ctrl.abort()
+      throw new ApiError(
+        `API ${path} body read timed out after ${FETCH_WALLCLOCK_MS}ms`,
+        path,
+        0,
+        'wallclock-body',
+      )
+    }
+    return jsonRace as T
   } catch (err) {
     if (err instanceof ApiError) throw err
     const msg = err instanceof Error ? err.message : 'unknown error'
     throw new ApiError(`API ${path} request failed: ${msg}`, path, 0)
   } finally {
-    clearTimeout(timer)
+    clearTimeout(abortTimer)
+    if (wallclockTimer !== undefined) clearTimeout(wallclockTimer)
     externalSignal?.removeEventListener('abort', onExternalAbort)
   }
 }
