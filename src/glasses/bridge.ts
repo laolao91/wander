@@ -65,7 +65,12 @@ function normalizeEventType(
 }
 
 export async function initGlasses(): Promise<void> {
+  // Boot-step logging — added 2026-04-24 to diagnose §2.1 (boot stuck on
+  // LOADING). Once the log capture story (§2.7) is solved, these tags
+  // pinpoint where the boot sequence hangs on real hardware.
+  console.log('[wander][boot] waitForEvenAppBridge')
   const bridge = await waitForEvenAppBridge()
+  console.log('[wander][boot] bridge ready')
   let state: AppState = INITIAL_STATE
 
   const runner = new EffectRunner({
@@ -76,6 +81,7 @@ export async function initGlasses(): Promise<void> {
 
   // Boot screen — the LOADING screen rendered by renderScreen.
   const initial = renderScreen(state.screen)
+  console.log('[wander][boot] createStartUpPageContainer')
   await bridge.createStartUpPageContainer(
     new CreateStartUpPageContainer({
       containerTotalNum: initial.containerTotalNum,
@@ -83,8 +89,10 @@ export async function initGlasses(): Promise<void> {
       listObject: initial.listObject,
     }),
   )
+  console.log('[wander][boot] startup container painted')
 
   // Kick off the first POI fetch and start the background refresh timer.
+  console.log('[wander][boot] dispatch fetch-pois')
   runner.runAll([{ type: 'fetch-pois', offset: 0, mode: 'replace' }])
   const refreshTimer = setInterval(() => {
     void runner.backgroundRefresh()

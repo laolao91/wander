@@ -101,8 +101,10 @@ export class EffectRunner {
     mode: 'replace' | 'append',
     isBackgroundRefresh: boolean,
   ): Promise<void> {
+    console.log('[wander][fetch] begin', { offset, mode, isBackgroundRefresh })
     const pos = await this.deps.geolocate()
     if (!pos) {
+      console.warn('[wander][fetch] no position — dispatching pois-failed/location')
       this.deps.dispatch({ type: 'pois-failed', reason: 'location' })
       return
     }
@@ -110,6 +112,12 @@ export class EffectRunner {
     const settings = this.deps.getSettings()
 
     try {
+      console.log('[wander][fetch] /api/poi', {
+        lat: pos.lat,
+        lng: pos.lng,
+        offset,
+        categories: settings.categories.length,
+      })
       const page = await fetchPois({
         lat: pos.lat,
         lng: pos.lng,
@@ -118,6 +126,7 @@ export class EffectRunner {
         lang: settings.lang ?? undefined,
         offset,
       })
+      console.log('[wander][fetch] got page', { items: page.items.length, hasMore: page.hasMore })
       this.deps.dispatch({
         type: 'pois-loaded',
         pois: page.items,
@@ -126,6 +135,7 @@ export class EffectRunner {
         isBackgroundRefresh,
       })
     } catch (err) {
+      console.warn('[wander][fetch] failed', err)
       this.deps.dispatch({ type: 'pois-failed', reason: reasonFor(err) })
     }
   }
@@ -212,20 +222,34 @@ const GEOLOCATE_WALL_CLOCK_MS = 15000
 
 function defaultGeolocate(): Promise<{ lat: number; lng: number } | null> {
   const mock = readDevMockCoords()
-  if (mock) return Promise.resolve(mock)
+  if (mock) {
+    console.log('[wander][geo] using DEV mock', mock)
+    return Promise.resolve(mock)
+  }
 
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    console.warn('[wander][geo] no navigator.geolocation — resolving null')
     return Promise.resolve(null)
   }
+  console.log('[wander][geo] getCurrentPosition start')
   const gps = new Promise<{ lat: number; lng: number } | null>((resolve) => {
     navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      () => resolve(null),
+      (p) => {
+        console.log('[wander][geo] got fix', { lat: p.coords.latitude, lng: p.coords.longitude })
+        resolve({ lat: p.coords.latitude, lng: p.coords.longitude })
+      },
+      (err) => {
+        console.warn('[wander][geo] error', err.code, err.message)
+        resolve(null)
+      },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
     )
   })
   const wallClock = new Promise<null>((resolve) =>
-    setTimeout(() => resolve(null), GEOLOCATE_WALL_CLOCK_MS),
+    setTimeout(() => {
+      console.warn('[wander][geo] wall-clock 15s — giving up')
+      resolve(null)
+    }, GEOLOCATE_WALL_CLOCK_MS),
   )
   return Promise.race([gps, wallClock])
 }

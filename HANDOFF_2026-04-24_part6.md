@@ -62,6 +62,9 @@ by long-pressing and *declining* an OS-level "End this Feature" prompt.
   launcher, not Wander's LOADING screen — would explain why long-press
   was the only escape.
 
+**Steven Response:**
+- Yes I should have said the app gets stuck on Wander's LOADING screen.
+
 **Where to look:**
 - `src/glasses/bridge.ts:64` `initGlasses` — the boot sequence
 - `src/glasses/effects.ts:213` `defaultGeolocate` — 15s wall-clock race
@@ -84,6 +87,10 @@ one item — a Starbucks. Expected: many.
 - `MAX_RESULTS_TOTAL` clipping after distance sort
 - New page-shape envelope on `/api/poi` may be returning `items: []`
   occasionally if Vercel function logs show errors
+
+**Steven Response:**
+- No I think it was in New York because I know the starbucks it
+  was referencing and it is nearby. 
 
 **Where to look:**
 - `api/poi.ts` — server-side merge + filter logic
@@ -159,6 +166,10 @@ aren't reaching us.
 
 **Recommendation:** (a) for v1, (b) for a follow-up if SDK supports it.
 
+**Steven Response:**
+- Yes A is fine, I just don't want the user to see, open in Safari
+  and it doesn't actually open in safari.
+
 ### 2.6 [MEDIUM] Scrolling still feels laggy
 **Symptom:** Field test reported lag at 300ms. We dropped to 150ms
 this session — untested on hardware yet.
@@ -173,6 +184,13 @@ on phone or glasses. Without logs, all the above issues are blind.
 
 **Question to answer first thing next session:** *How does Steven view
 console output during a real-hardware run?*
+
+**Steven Response:**
+- I'm personally not interested in seeing the logs, I only care that
+  you have access to them.  So resolve that however helps you.  I'm
+  not able to see anything on my phone or glasses and I'd rather not
+  use screen real estate to see logging info so any logs need to be
+  somewhere other than the phone or glasses.
 
 **Possibilities:**
 - Chrome DevTools remote debugging on the EvenHub app's WebView
@@ -200,6 +218,9 @@ diagnosing everything else.
 5. **Fix §2.3 double-tap** based on what eventType actually arrives.
 6. **Verify §2.4** is just a symptom of §2.2 (likely).
 7. **Decide §2.5** policy (label hint, alternate URL opener, or drop).
+8. **Steven Note** the phone side app still doesn't look any different.
+   This needs to be looked at, at some point as its basically a placeholder
+   at the moment.  
 
 ---
 

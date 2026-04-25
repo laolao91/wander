@@ -147,7 +147,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   )
 
   const enabled = parseCategories(req.query.categories)
+  // Diagnostic logging — visible in Vercel function logs. Added 2026-04-24
+  // to investigate why a NYC test returned only 1 POI. Tag is short so it's
+  // grep-friendly in the Vercel UI.
+  console.log(
+    '[poi] req',
+    JSON.stringify({
+      lat,
+      lng,
+      radiusMi,
+      offset,
+      enabled: Array.from(enabled),
+      categoriesRaw: typeof req.query.categories === 'string' ? req.query.categories : null,
+    }),
+  )
   if (enabled.size === 0) {
+    console.log('[poi] empty: no categories enabled')
     res.status(200).json({ items: [], hasMore: false })
     return
   }
@@ -164,21 +179,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       wantsWikiCategories ? fetchWikipedia(lat, lng, radiusM, lang) : Promise.resolve([]),
       wantsOverpass ? fetchOverpass(lat, lng, radiusM, enabled) : Promise.resolve([]),
     ])
+    console.log('[poi] sources', JSON.stringify({ wiki: wiki.length, osm: osm.length }))
 
-    const allMerged = dedupe([...wiki, ...osm])
-      .filter((p) => enabled.has(p.category))
+    const deduped = dedupe([...wiki, ...osm])
+    const filtered = deduped.filter((p) => enabled.has(p.category))
+    const allMerged = filtered
       .map((p) => enrichDistance(p, lat, lng))
       .sort((a, b) => a.distanceMeters - b.distanceMeters)
       .slice(0, MAX_RESULTS_TOTAL)
 
     const items = allMerged.slice(offset, offset + PAGE_SIZE)
     const hasMore = offset + PAGE_SIZE < allMerged.length
+    console.log(
+      '[poi] result',
+      JSON.stringify({
+        deduped: deduped.length,
+        filtered: filtered.length,
+        merged: allMerged.length,
+        items: items.length,
+        hasMore,
+        // Sample the first 3 names so logs are readable without dumping
+        // every result.
+        sample: items.slice(0, 3).map((p) => `${p.category}:${p.name}`),
+      }),
+    )
 
     res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=300')
     res.setHeader('Vary', 'Accept-Language')
     res.status(200).json({ items, hasMore })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown error'
+    console.error('[poi] fail', msg)
     res.status(502).json({ error: 'POI fetch failed', detail: msg })
   }
 }

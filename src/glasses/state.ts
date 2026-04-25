@@ -38,8 +38,16 @@ export interface AppState {
   settings: Settings
 }
 
+// LOADING messages are also a poor-man's progress indicator: when the
+// boot sequence hangs on real hardware, the user sees which step is
+// stuck. Step 1 is "Getting your location...", step 2 (after geolocate
+// succeeds and `position-updated` fires) flips to "Fetching nearby
+// places...". Field-test 2026-04-24 §2.1.
+export const LOADING_MSG_GEOLOCATE = 'Getting your location...'
+export const LOADING_MSG_FETCH = 'Fetching nearby places...'
+
 export const INITIAL_STATE: AppState = {
-  screen: { name: 'LOADING', message: 'Discovering interesting things near you...' },
+  screen: { name: 'LOADING', message: LOADING_MSG_GEOLOCATE },
   poiList: [],
   poiListHasMore: false,
   position: null,
@@ -311,15 +319,28 @@ function onWikiLoaded(state: AppState, article: WikiArticle): ReducerResult {
 
 function onPositionUpdated(state: AppState, lat: number, lng: number): ReducerResult {
   const position = { lat, lng }
-  if (state.screen.name !== 'NAV_ACTIVE') {
-    return { state: { ...state, position }, effects: [] }
+  if (state.screen.name === 'NAV_ACTIVE') {
+    // Phase 3 proper will compute step advancement + arrival here.
+    // Stub: just stash the position; geometry math goes in a helper later.
+    return {
+      state: { ...state, position, screen: { ...state.screen, position } },
+      effects: [],
+    }
   }
-  // Phase 3 proper will compute step advancement + arrival here.
-  // Stub: just stash the position; geometry math goes in a helper later.
-  return {
-    state: { ...state, position, screen: { ...state.screen, position } },
-    effects: [],
+  if (state.screen.name === 'LOADING') {
+    // Boot/refresh in progress and we just got a position fix — flip the
+    // LOADING message to the "fetching" step so the user knows we're past
+    // geolocation. See INITIAL_STATE comment for the rationale.
+    return {
+      state: {
+        ...state,
+        position,
+        screen: { ...state.screen, message: LOADING_MSG_FETCH },
+      },
+      effects: [],
+    }
   }
+  return { state: { ...state, position }, effects: [] }
 }
 
 function onRetry(state: AppState): ReducerResult {
@@ -550,7 +571,7 @@ function applyPendingRefresh(state: AppState): ReducerResult {
 function goLoading(state: AppState, effect: 'fetch-pois' | null): ReducerResult {
   return next(
     state,
-    { name: 'LOADING', message: 'Discovering interesting things near you...' },
+    { name: 'LOADING', message: LOADING_MSG_GEOLOCATE },
     effect ? [{ type: effect, offset: 0, mode: 'replace' }] : [],
   )
 }
