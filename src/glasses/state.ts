@@ -22,6 +22,7 @@ import type {
   Settings,
 } from './screens/types'
 import { canTransition, DEFAULT_SETTINGS } from './screens/types'
+import { LIST_DISPLAY_LIMIT } from './render'
 
 // ─── Top-level state ───────────────────────────────────────────────────
 
@@ -372,17 +373,18 @@ function onTap(state: AppState, itemIndex?: number): ReducerResult {
       // event sometimes lands as a textEvent/sysEvent with no index, so
       // fall back to our tracked cursor.
       const idx = itemIndex ?? state.screen.cursorIndex ?? 0
-      const numPois = state.screen.pois.length
-      // POI rows occupy 0..numPois-1. The "More results" sentinel sits
-      // at numPois iff hasMore. The "Refresh nearby" sentinel always
-      // sits at the very end. See WANDER_BUILD_SPEC §6.6 / Phase 4d.
-      if (idx < numPois) {
+      // Phase D: render only displays LIST_DISPLAY_LIMIT items. Routing
+      // and sentinel positions must agree with what the user sees.
+      const displayed = Math.min(state.screen.pois.length, LIST_DISPLAY_LIMIT)
+      const showMore =
+        state.screen.hasMore || state.screen.pois.length > LIST_DISPLAY_LIMIT
+      if (idx < displayed) {
         const poi = state.screen.pois[idx]
         if (!poi) return noop(state)
         return next(state, { name: 'POI_DETAIL', poi })
       }
-      const moreIdx = state.screen.hasMore ? numPois : -1
-      const refreshIdx = numPois + (state.screen.hasMore ? 1 : 0)
+      const moreIdx = showMore ? displayed : -1
+      const refreshIdx = displayed + (showMore ? 1 : 0)
       if (idx === moreIdx) {
         return reduce(state, { type: 'load-more' })
       }
@@ -477,11 +479,15 @@ function onCursorMove(state: AppState, delta: number): ReducerResult {
     return next(state, { ...state.screen, cursorIndex: nextIndex })
   }
   if (state.screen.name === 'POI_LIST') {
-    // Cursor walks through both POI rows and the trailing sentinels
-    // (More + Refresh). hasMore controls whether More is rendered;
-    // Refresh is always present.
-    const sentinels = (state.screen.hasMore ? 1 : 0) + 1
-    const max = state.screen.pois.length + sentinels - 1
+    // Cursor walks through visible POI rows + trailing sentinels.
+    // Render caps display at LIST_DISPLAY_LIMIT; cursor must agree so
+    // users can't park on an off-screen row. (Phase D: payload-size
+    // workaround for silent BLE rebuild failure on real glasses.)
+    const displayed = Math.min(state.screen.pois.length, LIST_DISPLAY_LIMIT)
+    const showMore =
+      state.screen.hasMore || state.screen.pois.length > LIST_DISPLAY_LIMIT
+    const sentinels = (showMore ? 1 : 0) + 1
+    const max = displayed + sentinels - 1
     const cur = state.screen.cursorIndex ?? 0
     const nextIndex = clamp(cur + delta, 0, max)
     if (nextIndex === cur) return noop(state)

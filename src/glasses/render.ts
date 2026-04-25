@@ -198,22 +198,36 @@ export function renderInPlaceUpdate(screen: Screen): TextContainerUpgrade | null
 
 // ─── Per-screen renderers ──────────────────────────────────────────────
 
+/**
+ * Field-test 2026-04-25: 20-item POI_LIST rebuilds appear to silently
+ * fail on real G2 hardware — the LOADING screen stays painted while
+ * the reducer state is POI_LIST. Suspected payload-size limit on the
+ * BLE rebuild path. Cap the rendered slice to a smaller value while
+ * we diagnose. Server still returns 20; state still holds 20; only
+ * the firmware-bound list is trimmed. See HANDOFF_2026-04-25.
+ */
+export const LIST_DISPLAY_LIMIT = 8
+
 function renderPoiList(
   pois: Poi[],
   hasMore: boolean,
   cursorIndex: number,
 ): RebuildPageContainer {
   // POI rows + optional "More" sentinel + always-on "Refresh" sentinel.
-  // Sentinel indices are pinned to (pois.length, pois.length+hasMore?1:0)
+  // Sentinel indices are pinned to (displayedCount, displayedCount+hasMore?1:0)
   // so the reducer's tap routing matches; see onTap POI_LIST in state.ts.
-  const items: string[] = pois.slice(0, 20).map((p, i) =>
+  const displayed = pois.slice(0, LIST_DISPLAY_LIMIT)
+  const items: string[] = displayed.map((p, i) =>
     poiListLine(p, i === cursorIndex),
   )
-  if (hasMore) {
-    const idx = pois.length
+  // "More results" appears when the server has more pages OR we trimmed
+  // the local list (i.e., state has more than we're displaying).
+  const showMore = hasMore || pois.length > LIST_DISPLAY_LIMIT
+  if (showMore) {
+    const idx = displayed.length
     items.push(sentinelLine('▼ More results', idx === cursorIndex))
   }
-  const refreshIdx = pois.length + (hasMore ? 1 : 0)
+  const refreshIdx = displayed.length + (showMore ? 1 : 0)
   items.push(sentinelLine('↻ Refresh nearby', refreshIdx === cursorIndex))
   return new RebuildPageContainer({
     containerTotalNum: 1,

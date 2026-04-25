@@ -210,15 +210,20 @@ describe('renderScreen POI_LIST', () => {
     const pois = Array.from({ length: 25 }, (_, i) =>
       makePoi({ id: `wiki_${i}`, name: `POI ${i}` }),
     )
-    // POI rows are clipped to 20 by the renderer; sentinel sits after.
+    // Phase D 2026-04-25: POI rows are clipped to LIST_DISPLAY_LIMIT (8)
+    // by the renderer to keep the BLE rebuild payload small. When local
+    // state has more items than displayed, a "More results" sentinel
+    // appears even if hasMore=false at the server level.
     const out = renderScreen({ name: 'POI_LIST', pois, hasMore: false })
     expect(out.containerTotalNum).toBe(1)
     expect(out.listObject).toHaveLength(1)
     const list = out.listObject?.[0]
     expect(list?.containerID).toBe(ID_LIST)
-    expect(list?.itemContainer?.itemCount).toBe(21) // 20 pois + 1 refresh sentinel
-    expect(list?.itemContainer?.itemName).toHaveLength(21)
-    expect(list?.itemContainer?.itemName?.[20]).toContain('Refresh')
+    // 8 displayed pois + More sentinel (local-overflow) + Refresh sentinel
+    expect(list?.itemContainer?.itemCount).toBe(10)
+    expect(list?.itemContainer?.itemName).toHaveLength(10)
+    expect(list?.itemContainer?.itemName?.[8]).toContain('More')
+    expect(list?.itemContainer?.itemName?.[9]).toContain('Refresh')
   })
 
   it('appends a "More results" sentinel when hasMore=true', () => {

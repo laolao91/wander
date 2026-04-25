@@ -147,11 +147,19 @@ function pushScreen(
   if (prevName === next.name) {
     const upgrade = renderInPlaceUpdate(next)
     if (upgrade) {
-      void bridge.textContainerUpgrade(upgrade)
+      // Phase D 2026-04-25: previously `void`'d — any SDK rejection was
+      // swallowed. Field test surfaced symptoms consistent with silent
+      // SDK errors on POI_LIST rebuilds. Log so we can see them.
+      Promise.resolve(bridge.textContainerUpgrade(upgrade)).catch((err) => {
+        console.error('[wander][sdk] textContainerUpgrade failed', { screen: next.name, err })
+      })
       return
     }
   }
-  void bridge.rebuildPageContainer(renderScreen(next))
+  console.log('[wander][sdk] rebuildPageContainer', { from: prevName, to: next.name })
+  Promise.resolve(bridge.rebuildPageContainer(renderScreen(next))).catch((err) => {
+    console.error('[wander][sdk] rebuildPageContainer failed', { screen: next.name, err })
+  })
 }
 
 // ─── Minimap push ────────────────────────────────────────────────────────
