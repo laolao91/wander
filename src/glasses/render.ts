@@ -225,24 +225,31 @@ function renderPoiList(
   displayOffset: number,
   cursorIndex: number,
 ): RebuildPageContainer {
-  // Phase E (2026-04-26): show a sliding window of `pois` starting at
-  // `displayOffset`. "More results" advances the window through cached
-  // items first; only the last window calls the server. Sentinel
-  // positions are relative to the visible slice — the reducer's tap
-  // routing must match (see onTap POI_LIST).
+  // Phase G (2026-04-26): show a sliding window of `pois` starting at
+  // `displayOffset`. Sentinels:
+  //   - "▲ Previous" only when displayOffset > 0 (lets user walk back)
+  //   - POI rows in the middle
+  //   - "▼ More results" if there's more locally OR server hasMore
+  //   - "↻ Refresh nearby" always last
+  // Sentinel positions match the reducer's onTap routing (state.ts).
   const displayed = pois.slice(displayOffset, displayOffset + LIST_DISPLAY_LIMIT)
-  const items: string[] = displayed.map((p, i) =>
-    poiListLine(p, i === cursorIndex),
-  )
-  // "More results" appears when there's more locally past this window OR
-  // the server has more pages we haven't fetched yet.
+  const showPrev = displayOffset > 0
   const hasLocalMore = displayOffset + LIST_DISPLAY_LIMIT < pois.length
   const showMore = hasLocalMore || hasMore
-  if (showMore) {
-    const idx = displayed.length
-    items.push(sentinelLine('▼ More results', idx === cursorIndex))
+
+  const items: string[] = []
+  if (showPrev) {
+    items.push(sentinelLine('▲ Previous', 0 === cursorIndex))
   }
-  const refreshIdx = displayed.length + (showMore ? 1 : 0)
+  const poiBase = showPrev ? 1 : 0
+  displayed.forEach((p, i) => {
+    items.push(poiListLine(p, poiBase + i === cursorIndex))
+  })
+  const moreIdx = poiBase + displayed.length
+  if (showMore) {
+    items.push(sentinelLine('▼ More results', moreIdx === cursorIndex))
+  }
+  const refreshIdx = moreIdx + (showMore ? 1 : 0)
   items.push(sentinelLine('↻ Refresh nearby', refreshIdx === cursorIndex))
   return new RebuildPageContainer({
     containerTotalNum: 1,

@@ -106,6 +106,14 @@ export async function initGlasses(): Promise<void> {
     dispatch: (event) => dispatch(event),
     getSettings: () => state.settings,
     exitApp: () => void bridge.shutDownPageContainer(0),
+    // Phase G (2026-04-26): speculative attempt to escape the EvenHub
+    // in-app browser overlay (which captures glasses input). The SDK's
+    // public method enum doesn't list a URL-opening method, but
+    // `callEvenApp` accepts an arbitrary string method name — if the
+    // host happens to expose `openExternalUrl` (or similar), it will
+    // route through the OS browser and free the glasses cursor. If it
+    // rejects (method unknown), we fall back to `_system` then `_blank`.
+    openUrl: (url) => openExternalUrl(bridge, url),
   })
 
   // Boot screen — the LOADING screen rendered by renderScreen.
@@ -338,4 +346,45 @@ function scrollOnCooldown(): boolean {
   if (now - _lastScrollAt < SCROLL_COOLDOWN_MS) return true
   _lastScrollAt = now
   return false
+}
+
+/**
+ * Open an external URL "on the phone" in a way that doesn't capture
+ * glasses input. Tries (in order):
+ *   1. `bridge.callEvenApp('openExternalUrl', { url })` — speculative;
+ *      EvenHub's public API doesn't document this method but the
+ *      callEvenApp signature accepts arbitrary method names. If a
+ *      handler exists, the host routes through the OS browser and
+ *      Wander stays foregrounded. Field test 2026-04-26 will tell us.
+ *   2. `window.open(url, '_system', ...)` — Cordova/Capacitor
+ *      convention for "open in the OS browser, don't trap me in this
+ *      WebView." Some Flutter inappwebview hosts honor this hint.
+ *   3. `window.open(url, '_blank', ...)` — last resort. This is the
+ *      original behavior that lands in EvenHub's in-app browser overlay
+ *      and captures glasses input. We accept the trap rather than
+ *      drop the action entirely.
+ * Errors at any step are swallowed and logged so a buggy URL never
+ * crashes Wander mid-walk.
+ */
+async function openExternalUrl(bridge: EvenAppBridge, url: string): Promise<void> {
+  try {
+    // Speculative — if the host doesn't know this method, this rejects.
+    await bridge.callEvenApp('openExternalUrl', { url })
+    console.log('[wander][openUrl] routed via host openExternalUrl')
+    return
+  } catch (err) {
+    console.log('[wander][openUrl] host openExternalUrl unavailable', err)
+  }
+  if (typeof window === 'undefined') return
+  try {
+    const sys = window.open(url, '_system', 'noopener,noreferrer')
+    if (sys) {
+      console.log('[wander][openUrl] _system accepted')
+      return
+    }
+  } catch {
+    // _system unsupported — fall through.
+  }
+  console.log('[wander][openUrl] falling back to _blank (input lock expected)')
+  window.open(url, '_blank', 'noopener,noreferrer')
 }

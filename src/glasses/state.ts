@@ -392,21 +392,35 @@ function onRetry(state: AppState): ReducerResult {
 function onTap(state: AppState, itemIndex?: number): ReducerResult {
   switch (state.screen.name) {
     case 'POI_LIST': {
-      // Phase E: cursor and itemIndex are relative to the *visible*
-      // window. Translate to a global poi index via displayOffset.
+      // Phase G: cursor and itemIndex are relative to the *visible*
+      // window, which may include a leading "▲ Previous" sentinel
+      // (when displayOffset > 0), the POI rows, and trailing
+      // "▼ More" / "↻ Refresh" sentinels. Translate to a global
+      // poi index via displayOffset.
       const idx = itemIndex ?? state.screen.cursorIndex ?? 0
       const offset = state.screen.displayOffset ?? 0
       const remaining = state.screen.pois.length - offset
       const displayed = Math.min(Math.max(remaining, 0), LIST_DISPLAY_LIMIT)
+      const showPrev = offset > 0
       const hasLocalMore = offset + LIST_DISPLAY_LIMIT < state.screen.pois.length
       const showMore = hasLocalMore || state.screen.hasMore
-      if (idx < displayed) {
-        const poi = state.screen.pois[offset + idx]
+      const poiBase = showPrev ? 1 : 0
+      // Previous sentinel
+      if (showPrev && idx === 0) {
+        return next(state, {
+          ...state.screen,
+          displayOffset: Math.max(0, offset - LIST_DISPLAY_LIMIT),
+          cursorIndex: 0,
+        })
+      }
+      // POI row
+      if (idx >= poiBase && idx < poiBase + displayed) {
+        const poi = state.screen.pois[offset + (idx - poiBase)]
         if (!poi) return noop(state)
         return next(state, { name: 'POI_DETAIL', poi })
       }
-      const moreIdx = showMore ? displayed : -1
-      const refreshIdx = displayed + (showMore ? 1 : 0)
+      const moreIdx = showMore ? poiBase + displayed : -1
+      const refreshIdx = poiBase + displayed + (showMore ? 1 : 0)
       if (idx === moreIdx) {
         return reduce(state, { type: 'load-more' })
       }
@@ -501,16 +515,17 @@ function onCursorMove(state: AppState, delta: number): ReducerResult {
     return next(state, { ...state.screen, cursorIndex: nextIndex })
   }
   if (state.screen.name === 'POI_LIST') {
-    // Cursor walks through visible POI rows + trailing sentinels (More,
-    // Refresh). Bounds are derived from the visible window only; the
-    // cursor never leaves what's painted on the firmware.
+    // Cursor walks across (Previous?) + POI rows + (More?) + Refresh.
+    // Bounds derived from visible window only — cursor never leaves
+    // what's painted on the firmware.
     const offset = state.screen.displayOffset ?? 0
     const remaining = state.screen.pois.length - offset
     const displayed = Math.min(Math.max(remaining, 0), LIST_DISPLAY_LIMIT)
+    const showPrev = offset > 0
     const hasLocalMore = offset + LIST_DISPLAY_LIMIT < state.screen.pois.length
     const showMore = hasLocalMore || state.screen.hasMore
-    const sentinels = (showMore ? 1 : 0) + 1
-    const max = displayed + sentinels - 1
+    const total = (showPrev ? 1 : 0) + displayed + (showMore ? 1 : 0) + 1
+    const max = total - 1
     const cur = state.screen.cursorIndex ?? 0
     const nextIndex = clamp(cur + delta, 0, max)
     if (nextIndex === cur) return noop(state)
