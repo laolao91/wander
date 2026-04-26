@@ -56,9 +56,11 @@ export interface PoiListScreen {
    * LIST_DISPLAY_LIMIT and use this offset to scroll a window through
    * the locally-cached `pois` first, only hitting the server for a fresh
    * page once the window is past the end. Always >= 0; aligned to LIMIT
-   * boundaries so the cursor math stays simple.
+   * boundaries so the cursor math stays simple. Optional for backward-
+   * compat with screen literals that don't pass it; reducer + render
+   * both default to 0 when undefined.
    */
-  displayOffset: number
+  displayOffset?: number
   /** Highlight cursor — relative to the visible window (0..LIMIT-1 + sentinels). */
   cursorIndex?: number
 }
