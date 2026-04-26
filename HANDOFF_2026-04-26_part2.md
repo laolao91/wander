@@ -136,6 +136,104 @@ Today it's just route geometry + position arrow. v1.x feature — see
 part 1 §3.4 for the options (Mapbox Static / OSM tiles / custom
 render). Estimate: 1-2 sessions to do well.
 
+### 3.8 [PROPOSED] Phase H — Settings tab UI (1 session)
+**Status:** Scaffolding done, UI not built. Steven greenlit this as
+the next major phase 2026-04-26.
+
+**What exists today:**
+- `src/phone/types.ts` — `Settings`, `CategoryId`, `RadiusMiles`,
+  `PhoneState`, full event/effect types, `DEFAULT_SETTINGS`
+- `src/phone/state.ts` — pure reducer with `radius-changed`,
+  `category-toggled`, sync events
+- `src/phone/storage.ts` — `bridge.setLocalStorage` adapter, JSON
+  persistence, default-tolerant parsers
+- Tests for both modules
+
+**What's missing:**
+- `src/phone/App.tsx` is a 30-line placeholder card. Need to wire
+  `reduce()` + `loadSettings()` / `saveSettings()` into actual UI.
+
+**Mockup spec** (`Point of Interest App/wander-mockup.html`,
+section "PHONE SCREEN 2: Settings Tab", lines 1030-1138):
+- **Search Radius** — slider with 5 ticks (0.25 / 0.5 / 0.75 / 1.0 /
+  1.5 mi), default 0.75
+- **Categories** — 8 toggle rows with icon glyphs:
+  - ★ Historic & Landmarks (default ON)
+  - ■ Parks & Nature (ON)
+  - ▲ Museums & Galleries (ON)
+  - † Religious Sites (ON)
+  - ○ Public Art (OFF)
+  - ◉ Libraries & Education (OFF)
+  - ◆ Restaurants & Cafes (ON)
+  - ● Bars & Nightlife (OFF)
+- **Display** — Sort by Proximity (read-only), Max results 20
+  (read-only)
+- **Info card** — "Changes sync to glasses automatically. Tap Refresh
+  on the Nearby tab to reload results."
+
+**Spec reference:** `WANDER_BUILD_SPEC.md` §9 ("Phone Companion UI").
+
+**Components:** `even-toolkit/web` only. Use `AppShell`, `NavBar`
+(already wired), plus add `SectionHeader`, `Toggle`, `Slider`. No
+custom CSS wrappers per `HANDOFF.md` ground rules.
+
+**Wiring loop:** Settings change → reducer emits `persist-settings`
++ `broadcast-settings` effects → run `saveSettings(kv, settings)` →
+glasses-side `/api/poi` already reads `categories` + `radiusMiles`
+on the next call, so tapping "Refresh nearby" on glasses immediately
+respects the new settings. **No new glasses code required.**
+
+**Side decision needed:** category-id alignment. Phone-side type uses
+`historic|parks|museums|religious|publicArt|libraries|restaurants|nightlife`
+(plural). Glasses-side `Category` type uses
+`landmark|park|museum|religion|art|library|food|nightlife` (singular).
+The wire format the API accepts is the glasses-side names. The
+broadcast effect needs to map between them, OR we unify on one set
+(probably the glasses set, since the API already speaks it).
+
+**Estimate:** 1 session (UI assembly + wire-up + tests). All-or-
+nothing — don't start if you can't finish; the scaffolding works as
+a placeholder indefinitely.
+
+### 3.9 [PROPOSED] Phase I — Nearby tab UI (2 sessions)
+**Status:** Bigger architectural lift, deferred to its own session
+arc once Phase H lands.
+
+**What's missing:**
+- Phone-side POI fetch + cache (today only the glasses fetch)
+- Reverse geocoding for the "Upper West Side, NYC" header subtitle
+- G2 connection status pill (some bridge state — `bridge.ready`
+  exists, plus `BridgeEvent.deviceStatusChanged`)
+- Nav banner that mirrors the **glasses** NAV_ACTIVE state — needs
+  a glasses→phone bridge channel that doesn't exist today
+- Bottom-sheet POI detail with Navigate / Open in Safari actions
+- POI cards grouped by category section header
+
+**Mockup spec** (`wander-mockup.html`, lines 925-1029):
+- App header — Wander logo pill + "Nearby" title + G2 status dot +
+  reverse-geocoded location
+- Conditional nav banner ("→ destination · ETA · current step · End")
+- Refresh bar — "Updated X min ago · N places found · ↺ Refresh"
+- Section headers ("Landmarks & Parks", "Food & Drink") with POI
+  cards beneath
+
+**Hard part:** the glasses→phone state mirror. The current SDK
+exposes `BridgeEvent` from glasses→phone for hardware status, but
+not for app state. Three approaches:
+- **(a)** Phone polls `bridge.getLocalStorage('wander_glasses_state')`
+  and the glasses writes its current state on every transition. Simple
+  but introduces write traffic on every screen change.
+- **(b)** Add a custom channel via `bridge.callEvenApp` with a
+  matching listener on the other side. Cleaner but requires host
+  cooperation.
+- **(c)** Skip the mirror for v1.0 — show the nav banner only when
+  the phone itself initiated nav (it can't, today). Drop that piece
+  of the mockup, document deviation.
+
+**Recommendation:** ship Phase H first, then revisit (a)/(b)/(c)
+with a fresh design pass before starting Phase I. Don't begin Phase
+I in the same session as H.
+
 ### 3.5 [DEFERRED] Scroll cooldown 150ms still feels slow
 Drop to 0 or 100 and re-test. Small constant change in `bridge.ts`.
 
