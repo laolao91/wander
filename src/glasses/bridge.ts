@@ -349,32 +349,15 @@ function scrollOnCooldown(): boolean {
 }
 
 /**
- * Open an external URL "on the phone" in a way that doesn't capture
- * glasses input. Tries (in order):
- *   1. `bridge.callEvenApp('openExternalUrl', { url })` — speculative;
- *      EvenHub's public API doesn't document this method but the
- *      callEvenApp signature accepts arbitrary method names. If a
- *      handler exists, the host routes through the OS browser and
- *      Wander stays foregrounded. Field test 2026-04-26 will tell us.
- *   2. `window.open(url, '_system', ...)` — Cordova/Capacitor
- *      convention for "open in the OS browser, don't trap me in this
- *      WebView." Some Flutter inappwebview hosts honor this hint.
- *   3. `window.open(url, '_blank', ...)` — last resort. This is the
- *      original behavior that lands in EvenHub's in-app browser overlay
- *      and captures glasses input. We accept the trap rather than
- *      drop the action entirely.
- * Errors at any step are swallowed and logged so a buggy URL never
- * crashes Wander mid-walk.
+ * Open an external URL "on the phone." Reverted 2026-04-26 (Phase G2):
+ * the speculative `bridge.callEvenApp('openExternalUrl', ...)` path was
+ * resolving silently on the EvenHub host without actually opening the
+ * URL, so the URL never reached the user. Back to `_system` first then
+ * `_blank` fallback. Glasses input lock while the in-app browser is up
+ * remains a known v1 limitation; tracking next-session options in
+ * HANDOFF_2026-04-26_part2.md §3.1.
  */
-async function openExternalUrl(bridge: EvenAppBridge, url: string): Promise<void> {
-  try {
-    // Speculative — if the host doesn't know this method, this rejects.
-    await bridge.callEvenApp('openExternalUrl', { url })
-    console.log('[wander][openUrl] routed via host openExternalUrl')
-    return
-  } catch (err) {
-    console.log('[wander][openUrl] host openExternalUrl unavailable', err)
-  }
+async function openExternalUrl(_bridge: EvenAppBridge, url: string): Promise<void> {
   if (typeof window === 'undefined') return
   try {
     const sys = window.open(url, '_system', 'noopener,noreferrer')
