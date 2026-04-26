@@ -256,6 +256,15 @@ function defaultGeolocate(): Promise<{ lat: number; lng: number } | null> {
 
 function defaultOpenUrl(url: string): void {
   if (typeof window === 'undefined') return
+  // Phase F (2026-04-26): try `_system` first — Cordova/Capacitor and
+  // many WebView wrappers honor this target to escape the in-app
+  // browser and route the URL through the OS browser instead. Field
+  // test 2026-04-25 confirmed that `_blank` opens inside EvenHub's
+  // overlay, which captures glasses input. If `_system` returns a
+  // truthy window, the host accepted; otherwise fall back to `_blank`
+  // so we still open *something*.
+  const sys = window.open(url, '_system', 'noopener,noreferrer')
+  if (sys) return
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 

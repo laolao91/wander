@@ -42,7 +42,7 @@ function listState(pois: Poi[] = [POI_A, POI_B], hasMore = false): AppState {
     ...INITIAL_STATE,
     poiList: pois,
     poiListHasMore: hasMore,
-    screen: { name: 'POI_LIST', pois, hasMore },
+    screen: { name: 'POI_LIST', pois, hasMore, displayOffset: 0 },
     position: { lat: 40.7128, lng: -74.006 },
   }
 }
@@ -480,14 +480,17 @@ describe('transition guard', () => {
 // ─── Phase 4d — POI_LIST pagination + refresh ──────────────────────────
 
 describe('POI_LIST pagination — load-more', () => {
-  it('tap on the More sentinel index emits fetch-pois with offset+mode=append', () => {
+  it('tap on the More sentinel fetches next page and goes through LOADING', () => {
+    // Phase E: when local cache is exhausted (offset+LIMIT >= pois.length),
+    // load-more transitions to LOADING with the "Loading more places…"
+    // message while the fetch is in flight.
     const start = listState([POI_A, POI_B], /* hasMore */ true)
     // 0..1 are POIs; index 2 is the "More" sentinel (hasMore=true).
     const r = reduce(start, { type: 'tap', itemIndex: 2 })
     expect(r.effects).toEqual([
       { type: 'fetch-pois', offset: 2, mode: 'append' },
     ])
-    expect(r.state.screen.name).toBe('POI_LIST') // stays on the list
+    expect(r.state.screen.name).toBe('LOADING')
   })
 
   it('load-more is a no-op when hasMore=false (no More sentinel exists)', () => {
@@ -508,11 +511,14 @@ describe('POI_LIST pagination — load-more', () => {
     })
     expect(r.state.poiList).toEqual([POI_A, POI_B])
     expect(r.state.poiListHasMore).toBe(false)
+    // Phase E: window snaps to the first new item (displayOffset = old
+    // length); cursor sits at top of the new window.
     expect(r.state.screen).toMatchObject({
       name: 'POI_LIST',
       pois: [POI_A, POI_B],
       hasMore: false,
-      cursorIndex: 1, // first newly-appended POI
+      displayOffset: 1,
+      cursorIndex: 0,
     })
   })
 

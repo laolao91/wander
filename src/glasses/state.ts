@@ -46,6 +46,10 @@ export interface AppState {
 // places...". Field-test 2026-04-24 §2.1.
 export const LOADING_MSG_GEOLOCATE = 'Getting your location...'
 export const LOADING_MSG_FETCH = 'Fetching nearby places...'
+// Phase E: shown while "More results" is fetching the next server page.
+// Distinct from FETCH so the user can tell whether this is the initial
+// load (geolocate first) or a follow-on page request.
+export const LOADING_MSG_FETCH_MORE = 'Loading more places...'
 
 export const INITIAL_STATE: AppState = {
   screen: { name: 'LOADING', message: LOADING_MSG_GEOLOCATE },
@@ -221,15 +225,17 @@ function onPoisLoaded(
       poiList: merged,
       poiListHasMore: hasMore,
     }
-    if (state.screen.name === 'POI_LIST') {
-      // Cursor stays at the previous "More" sentinel index — which now
-      // points at the first newly-appended POI. Natural for scroll-down.
-      const prevPoiCount = state.poiList.length
+    // Phase E: append-fetch is preceded by goLoading, so the live screen
+    // is LOADING (not POI_LIST). Either way, snap the visible window to
+    // the first newly-fetched item with cursor at top.
+    const prevPoiCount = state.poiList.length
+    if (state.screen.name === 'POI_LIST' || state.screen.name === 'LOADING') {
       return next(nextState, {
         name: 'POI_LIST',
         pois: merged,
         hasMore,
-        cursorIndex: prevPoiCount,
+        displayOffset: prevPoiCount,
+        cursorIndex: 0,
       })
     }
     return { state: nextState, effects: [] }
@@ -262,21 +268,38 @@ function onPoisLoaded(
       poiListHasMore: hasMore,
       pendingPoiRefresh: null,
     },
-    { name: 'POI_LIST', pois, hasMore, cursorIndex: 0 },
+    { name: 'POI_LIST', pois, hasMore, displayOffset: 0, cursorIndex: 0 },
   )
 }
 
 function onLoadMore(state: AppState): ReducerResult {
-  // Only meaningful from POI_LIST when there's more to fetch.
-  if (state.screen.name !== 'POI_LIST' || !state.screen.hasMore) {
-    return noop(state)
+  if (state.screen.name !== 'POI_LIST') return noop(state)
+  const offset = state.screen.displayOffset ?? 0
+  const nextOffset = offset + LIST_DISPLAY_LIMIT
+
+  // Phase E: if we still have un-displayed items locally, just advance
+  // the visible window — instant, no network round-trip. Reset cursor
+  // to the top of the new window.
+  if (nextOffset < state.screen.pois.length) {
+    return next(state, {
+      ...state.screen,
+      displayOffset: nextOffset,
+      cursorIndex: 0,
+    })
   }
-  return {
+
+  // Local cache is exhausted. Only meaningful if the server has more.
+  if (!state.screen.hasMore) return noop(state)
+
+  // Surface a LOADING screen ("Loading more places…") so the user gets
+  // visible feedback while the fetch is in flight. onPoisLoaded with
+  // mode='append' will return us to POI_LIST and bump displayOffset to
+  // the start of the new items.
+  return next(
     state,
-    effects: [
-      { type: 'fetch-pois', offset: state.poiList.length, mode: 'append' },
-    ],
-  }
+    { name: 'LOADING', message: LOADING_MSG_FETCH_MORE },
+    [{ type: 'fetch-pois', offset: state.poiList.length, mode: 'append' }],
+  )
 }
 
 function onRefreshPois(state: AppState): ReducerResult {
@@ -369,17 +392,16 @@ function onRetry(state: AppState): ReducerResult {
 function onTap(state: AppState, itemIndex?: number): ReducerResult {
   switch (state.screen.name) {
     case 'POI_LIST': {
-      // SDK passes itemIndex on listEvent CLICK; on real glasses the
-      // event sometimes lands as a textEvent/sysEvent with no index, so
-      // fall back to our tracked cursor.
+      // Phase E: cursor and itemIndex are relative to the *visible*
+      // window. Translate to a global poi index via displayOffset.
       const idx = itemIndex ?? state.screen.cursorIndex ?? 0
-      // Phase D: render only displays LIST_DISPLAY_LIMIT items. Routing
-      // and sentinel positions must agree with what the user sees.
-      const displayed = Math.min(state.screen.pois.length, LIST_DISPLAY_LIMIT)
-      const showMore =
-        state.screen.hasMore || state.screen.pois.length > LIST_DISPLAY_LIMIT
+      const offset = state.screen.displayOffset ?? 0
+      const remaining = state.screen.pois.length - offset
+      const displayed = Math.min(Math.max(remaining, 0), LIST_DISPLAY_LIMIT)
+      const hasLocalMore = offset + LIST_DISPLAY_LIMIT < state.screen.pois.length
+      const showMore = hasLocalMore || state.screen.hasMore
       if (idx < displayed) {
-        const poi = state.screen.pois[idx]
+        const poi = state.screen.pois[offset + idx]
         if (!poi) return noop(state)
         return next(state, { name: 'POI_DETAIL', poi })
       }
@@ -479,13 +501,14 @@ function onCursorMove(state: AppState, delta: number): ReducerResult {
     return next(state, { ...state.screen, cursorIndex: nextIndex })
   }
   if (state.screen.name === 'POI_LIST') {
-    // Cursor walks through visible POI rows + trailing sentinels.
-    // Render caps display at LIST_DISPLAY_LIMIT; cursor must agree so
-    // users can't park on an off-screen row. (Phase D: payload-size
-    // workaround for silent BLE rebuild failure on real glasses.)
-    const displayed = Math.min(state.screen.pois.length, LIST_DISPLAY_LIMIT)
-    const showMore =
-      state.screen.hasMore || state.screen.pois.length > LIST_DISPLAY_LIMIT
+    // Cursor walks through visible POI rows + trailing sentinels (More,
+    // Refresh). Bounds are derived from the visible window only; the
+    // cursor never leaves what's painted on the firmware.
+    const offset = state.screen.displayOffset ?? 0
+    const remaining = state.screen.pois.length - offset
+    const displayed = Math.min(Math.max(remaining, 0), LIST_DISPLAY_LIMIT)
+    const hasLocalMore = offset + LIST_DISPLAY_LIMIT < state.screen.pois.length
+    const showMore = hasLocalMore || state.screen.hasMore
     const sentinels = (showMore ? 1 : 0) + 1
     const max = displayed + sentinels - 1
     const cur = state.screen.cursorIndex ?? 0
@@ -570,7 +593,7 @@ function applyPendingRefresh(state: AppState): ReducerResult {
       poiListHasMore: hasMore,
       pendingPoiRefresh: null,
     },
-    { name: 'POI_LIST', pois, hasMore, cursorIndex: 0 },
+    { name: 'POI_LIST', pois, hasMore, displayOffset: 0, cursorIndex: 0 },
   )
 }
 

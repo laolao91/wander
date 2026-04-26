@@ -48,9 +48,38 @@ const BACKGROUND_REFRESH_MS = 5 * 60 * 1000
 const SCROLL_COOLDOWN_MS = 150
 let _lastScrollAt = 0
 
+// Phase F (2026-04-26): manual double-tap detector. The SDK's native
+// DOUBLE_CLICK_EVENT doesn't fire reliably on real BLE — field tests
+// 2026-04-24 and 2026-04-25 both showed double-tap unresponsive on
+// every screen except (intermittently) LOADING. This is a fallback:
+// two CLICK_EVENTs within MANUAL_DOUBLE_CLICK_WINDOW_MS are promoted
+// to a single `request-exit`. The first tap's effect still fires
+// (we dispatch immediately), but the user's intent — exit — wins
+// when they confirm the prompt. Tune by adjusting the window.
+const MANUAL_DOUBLE_CLICK_WINDOW_MS = 350
+let _lastClickAt = 0
+
 /** Test-only: reset module-level runtime state between test cases. */
 export function _resetBridgeEventState(): void {
   _lastScrollAt = 0
+  _lastClickAt = 0
+}
+
+/**
+ * Returns true if this CLICK arrived within the manual double-tap
+ * window. Caller should dispatch `request-exit` instead of `tap` and
+ * skip the rest of its handler. Resets the timestamp on detection so
+ * a third quick click isn't again treated as a double.
+ */
+function isManualDoubleClick(): boolean {
+  const now = Date.now()
+  const delta = now - _lastClickAt
+  if (_lastClickAt > 0 && delta < MANUAL_DOUBLE_CLICK_WINDOW_MS) {
+    _lastClickAt = 0
+    return true
+  }
+  _lastClickAt = now
+  return false
 }
 
 /**
@@ -250,6 +279,8 @@ export function translateGlassesEvent(
     switch (type) {
       case OsEventTypeList.CLICK_EVENT:
         dispatch({ type: 'tap', itemIndex: e.currentSelectItemIndex })
+        // Phase F: a follow-on click within the window promotes to exit.
+        if (isManualDoubleClick()) dispatch({ type: 'request-exit' })
         return
       case OsEventTypeList.SCROLL_TOP_EVENT:
         if (scrollOnCooldown()) return
@@ -279,6 +310,8 @@ export function translateGlassesEvent(
   switch (type) {
     case OsEventTypeList.CLICK_EVENT:
       dispatch({ type: 'tap' })
+      // Phase F: manual double-tap fallback (see isManualDoubleClick).
+      if (isManualDoubleClick()) dispatch({ type: 'request-exit' })
       return
 
     case OsEventTypeList.SCROLL_TOP_EVENT:

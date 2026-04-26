@@ -60,7 +60,13 @@ const NAV_MAP_X = NAV_TEXT_WIDTH // 336
 // the simulator screenshots show, 8px below the bottom hint).
 const NAV_MAP_Y = NAV_BODY_Y + Math.floor((NAV_BODY_HEIGHT - MINIMAP_HEIGHT) / 2)
 
-const RULE = '━'.repeat(40)
+// Phase F (2026-04-26): G2 font isn't truly monospace; '━' (BOX
+// DRAWINGS HEAVY HORIZONTAL) is wider than alphanumerics. A 40-glyph
+// rule wrapped to two stacked lines on real hardware (POI_DETAIL
+// screenshot, 2026-04-26). 28 glyphs fits the body without wrapping
+// at the same visual weight. Matches the NAV_RULE pattern (24 glyphs
+// for the narrower nav body).
+const RULE = '━'.repeat(28)
 // NAV_ACTIVE's body column is only ≈38 chars wide — a 40-char RULE wraps
 // into 2-3 stacked bars at the bottom of the screen (confirmed
 // 2026-04-24 sim screenshot). Use a narrower rule in the nav body so
@@ -81,7 +87,12 @@ export function renderScreen(screen: Screen): RebuildPageContainer {
       )
 
     case 'POI_LIST':
-      return renderPoiList(screen.pois, screen.hasMore, screen.cursorIndex ?? 0)
+      return renderPoiList(
+        screen.pois,
+        screen.hasMore,
+        screen.displayOffset ?? 0,
+        screen.cursorIndex ?? 0,
+      )
 
     case 'CONFIRM_EXIT':
       return singleText(
@@ -211,18 +222,22 @@ export const LIST_DISPLAY_LIMIT = 8
 function renderPoiList(
   pois: Poi[],
   hasMore: boolean,
+  displayOffset: number,
   cursorIndex: number,
 ): RebuildPageContainer {
-  // POI rows + optional "More" sentinel + always-on "Refresh" sentinel.
-  // Sentinel indices are pinned to (displayedCount, displayedCount+hasMore?1:0)
-  // so the reducer's tap routing matches; see onTap POI_LIST in state.ts.
-  const displayed = pois.slice(0, LIST_DISPLAY_LIMIT)
+  // Phase E (2026-04-26): show a sliding window of `pois` starting at
+  // `displayOffset`. "More results" advances the window through cached
+  // items first; only the last window calls the server. Sentinel
+  // positions are relative to the visible slice — the reducer's tap
+  // routing must match (see onTap POI_LIST).
+  const displayed = pois.slice(displayOffset, displayOffset + LIST_DISPLAY_LIMIT)
   const items: string[] = displayed.map((p, i) =>
     poiListLine(p, i === cursorIndex),
   )
-  // "More results" appears when the server has more pages OR we trimmed
-  // the local list (i.e., state has more than we're displaying).
-  const showMore = hasMore || pois.length > LIST_DISPLAY_LIMIT
+  // "More results" appears when there's more locally past this window OR
+  // the server has more pages we haven't fetched yet.
+  const hasLocalMore = displayOffset + LIST_DISPLAY_LIMIT < pois.length
+  const showMore = hasLocalMore || hasMore
   if (showMore) {
     const idx = displayed.length
     items.push(sentinelLine('▼ More results', idx === cursorIndex))

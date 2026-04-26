@@ -44,12 +44,22 @@ export interface PoiListScreen {
   name: 'POI_LIST'
   pois: Poi[]
   /**
-   * True when at least one more page exists past `pois.length`.
-   * Drives whether the "More results" sentinel is appended after the
-   * POI rows. The "Refresh nearby" sentinel is always rendered.
+   * True when at least one more page exists past `pois.length` on the
+   * server. Drives whether "More results" can fetch additional items
+   * once the local window has scrolled past everything we've cached.
+   * The "Refresh nearby" sentinel is always rendered.
    */
   hasMore: boolean
-  /** Highlight cursor — used as the tap target when the SDK doesn't pass an itemIndex. */
+  /**
+   * Phase E (2026-04-26): the firmware can't paint a 20-row list reliably
+   * (BLE rebuild payload limit). We cap the visible slice to
+   * LIST_DISPLAY_LIMIT and use this offset to scroll a window through
+   * the locally-cached `pois` first, only hitting the server for a fresh
+   * page once the window is past the end. Always >= 0; aligned to LIMIT
+   * boundaries so the cursor math stays simple.
+   */
+  displayOffset: number
+  /** Highlight cursor — relative to the visible window (0..LIMIT-1 + sentinels). */
   cursorIndex?: number
 }
 
