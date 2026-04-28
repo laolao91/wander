@@ -41,44 +41,60 @@ const BACKGROUND_REFRESH_MS = 5 * 60 * 1000
 // single R1-ring or temple gesture at scroll boundaries. We absorb those
 // bounces but err on the side of letting legitimate scrolls through —
 // field-test 2026-04-24 reported "scrolling feels laggy resulting in
-// misinputs" at 300ms, so we tightened to 150ms. If real bounces leak
-// through at 150, raise; if scrolling still feels sluggish, drop further.
-// Direction-agnostic: a fast reversal within the window is treated as a
-// bounce, not a user action.
-const SCROLL_COOLDOWN_MS = 150
+// misinputs" at 300ms, so we tightened to 150ms, then 100ms
+// (2026-04-27 — still no reported bounces at 150, so dropped further).
+// If real bounces leak through at 100, raise back toward 150.
+// Direction-agnostic: a fast reversal within the window is a bounce.
+const SCROLL_COOLDOWN_MS = 100
 let _lastScrollAt = 0
 
-// Phase F (2026-04-26): manual double-tap detector. The SDK's native
-// DOUBLE_CLICK_EVENT doesn't fire reliably on real BLE — field tests
-// 2026-04-24 and 2026-04-25 both showed double-tap unresponsive on
-// every screen except (intermittently) LOADING. This is a fallback:
-// two CLICK_EVENTs within MANUAL_DOUBLE_CLICK_WINDOW_MS are promoted
-// to a single `request-exit`. The first tap's effect still fires
-// (we dispatch immediately), but the user's intent — exit — wins
-// when they confirm the prompt. Tune by adjusting the window.
-const MANUAL_DOUBLE_CLICK_WINDOW_MS = 350
+// Phase F/H (2026-04-26/27): manual multi-tap exit detector.
+//
+// The SDK's native DOUBLE_CLICK_EVENT doesn't fire reliably on real BLE —
+// field tests 2026-04-24 and 2026-04-25 both showed it unresponsive.
+// Phase F introduced a fallback: two CLICK_EVENTs within the window are
+// promoted to `request-exit`. Phase H extends this to count-based
+// detection (fires at >= 2 taps) so a user who triple-taps to be sure
+// still triggers exit even if the SDK debounces one click per gesture.
+//
+// Sequence on a detected exit tap:
+//   - The first tap's `tap` effect still fires immediately (the reducer
+//     handles the resulting state change; `request-exit` then surfaces
+//     CONFIRM_EXIT on top of it).
+//   - `_clickCount` resets to 0 so the next tap starts a fresh sequence.
+const MANUAL_EXIT_TAP_WINDOW_MS = 350
+let _clickCount = 0
 let _lastClickAt = 0
 
 /** Test-only: reset module-level runtime state between test cases. */
 export function _resetBridgeEventState(): void {
   _lastScrollAt = 0
+  _clickCount = 0
   _lastClickAt = 0
 }
 
 /**
- * Returns true if this CLICK arrived within the manual double-tap
- * window. Caller should dispatch `request-exit` instead of `tap` and
- * skip the rest of its handler. Resets the timestamp on detection so
- * a third quick click isn't again treated as a double.
+ * Returns true when this CLICK is the 2nd (or later) tap within the
+ * manual exit-tap window — i.e. the user is signalling "I want to exit."
+ *
+ * Fires on count >= 2 (not exactly 2) so a triple-tap still works when
+ * the SDK debounces one of the clicks in a quick double-tap gesture.
+ * Resets the count on detection so a follow-on tap starts fresh.
  */
-function isManualDoubleClick(): boolean {
+function isManualExitTap(): boolean {
   const now = Date.now()
-  const delta = now - _lastClickAt
-  if (_lastClickAt > 0 && delta < MANUAL_DOUBLE_CLICK_WINDOW_MS) {
-    _lastClickAt = 0
+  if (now - _lastClickAt > MANUAL_EXIT_TAP_WINDOW_MS) {
+    // Window expired — start a fresh sequence from this tap.
+    _clickCount = 1
+    _lastClickAt = now
+    return false
+  }
+  _clickCount++
+  _lastClickAt = now
+  if (_clickCount >= 2) {
+    _clickCount = 0 // reset: next tap starts fresh
     return true
   }
-  _lastClickAt = now
   return false
 }
 
@@ -287,8 +303,8 @@ export function translateGlassesEvent(
     switch (type) {
       case OsEventTypeList.CLICK_EVENT:
         dispatch({ type: 'tap', itemIndex: e.currentSelectItemIndex })
-        // Phase F: a follow-on click within the window promotes to exit.
-        if (isManualDoubleClick()) dispatch({ type: 'request-exit' })
+        // Phase F/H: 2nd+ tap within the window promotes to exit.
+        if (isManualExitTap()) dispatch({ type: 'request-exit' })
         return
       case OsEventTypeList.SCROLL_TOP_EVENT:
         if (scrollOnCooldown()) return
@@ -318,8 +334,8 @@ export function translateGlassesEvent(
   switch (type) {
     case OsEventTypeList.CLICK_EVENT:
       dispatch({ type: 'tap' })
-      // Phase F: manual double-tap fallback (see isManualDoubleClick).
-      if (isManualDoubleClick()) dispatch({ type: 'request-exit' })
+      // Phase F/H: manual multi-tap exit fallback (see isManualExitTap).
+      if (isManualExitTap()) dispatch({ type: 'request-exit' })
       return
 
     case OsEventTypeList.SCROLL_TOP_EVENT:

@@ -305,3 +305,103 @@ describe('translateGlassesEvent — Phase 1 fixes', () => {
     expect(dispatch).toHaveBeenCalledWith({ type: 'tap' })
   })
 })
+
+// Phase F/H manual multi-tap exit detector (2026-04-26/27)
+// The SDK's DOUBLE_CLICK_EVENT is unreliable on real BLE. We fall back
+// to counting raw CLICK_EVENTs within a 350ms window. Fires on count >= 2
+// so a triple-tap gesture works even when the SDK debounces one click.
+describe('manual exit-tap detector', () => {
+  it('single click dispatches tap only (no request-exit)', () => {
+    const dispatch = vi.fn<(e: Event) => void>()
+    translateGlassesEvent(
+      textEvt(OsEventTypeList.CLICK_EVENT),
+      detailState(),
+      dispatch,
+      makeBridge(),
+    )
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect(dispatch).toHaveBeenCalledWith({ type: 'tap' })
+  })
+
+  it('two rapid clicks on a text screen dispatch tap then tap+request-exit', () => {
+    const dispatch = vi.fn<(e: Event) => void>()
+    // Click 1
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    // Click 2 (immediate — well within 350ms window)
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+
+    // Call 1: tap (click 1)
+    expect(dispatch).toHaveBeenNthCalledWith(1, { type: 'tap' })
+    // Call 2: tap (click 2, before exit check)
+    expect(dispatch).toHaveBeenNthCalledWith(2, { type: 'tap' })
+    // Call 3: request-exit (exit tap detected on click 2)
+    expect(dispatch).toHaveBeenNthCalledWith(3, { type: 'request-exit' })
+    expect(dispatch).toHaveBeenCalledTimes(3)
+  })
+
+  it('two rapid clicks on a list screen dispatch tap+itemIndex then request-exit', () => {
+    const dispatch = vi.fn<(e: Event) => void>()
+    translateGlassesEvent(listEvt(OsEventTypeList.CLICK_EVENT, 1), poiListState(), dispatch, makeBridge())
+    translateGlassesEvent(listEvt(OsEventTypeList.CLICK_EVENT, 1), poiListState(), dispatch, makeBridge())
+
+    expect(dispatch).toHaveBeenNthCalledWith(1, { type: 'tap', itemIndex: 1 })
+    expect(dispatch).toHaveBeenNthCalledWith(2, { type: 'tap', itemIndex: 1 })
+    expect(dispatch).toHaveBeenNthCalledWith(3, { type: 'request-exit' })
+    expect(dispatch).toHaveBeenCalledTimes(3)
+  })
+
+  it('triple-tap fires request-exit on the 2nd click (resilient to debounced 3rd)', () => {
+    // Simulates a user who triple-taps but the SDK delivers all 3.
+    // request-exit fires on click 2; click 3 starts a fresh sequence.
+    const dispatch = vi.fn<(e: Event) => void>()
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+
+    // Calls: tap, tap, request-exit (click 2), tap (click 3 starts fresh)
+    const calls = dispatch.mock.calls.map((c) => c[0])
+    expect(calls.filter((c) => (c as Event).type === 'request-exit')).toHaveLength(1)
+    expect(calls.filter((c) => (c as Event).type === 'tap')).toHaveLength(3)
+  })
+
+  it('triple-tap with SDK debouncing one click: 2 clicks received → still fires', () => {
+    // SDK drops the middle click of a three-tap gesture — we receive 2.
+    // Since 2 >= 2, request-exit still fires. This is the main motivation
+    // for the count-based approach over exactly-2.
+    const dispatch = vi.fn<(e: Event) => void>()
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+
+    const calls = dispatch.mock.calls.map((c) => (c[0] as Event).type)
+    expect(calls).toContain('request-exit')
+  })
+
+  it('slow second tap (outside window) resets the sequence — no exit', () => {
+    // We can't control Date.now() directly in node, but _resetBridgeEventState
+    // resets _lastClickAt to 0 — simulating an expired window.
+    const dispatch = vi.fn<(e: Event) => void>()
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    // Simulate time passing by resetting state (same effect as window expiry)
+    _resetBridgeEventState()
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+
+    // Both clicks are treated as first-taps of their own sequences.
+    const calls = dispatch.mock.calls.map((c) => (c[0] as Event).type)
+    expect(calls).not.toContain('request-exit')
+    expect(calls.every((t) => t === 'tap')).toBe(true)
+  })
+
+  it('after a detected exit-tap, the next single click does NOT re-trigger exit', () => {
+    // _clickCount resets to 0 after firing — the next tap starts fresh.
+    const dispatch = vi.fn<(e: Event) => void>()
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    // At this point request-exit has fired and count is reset.
+
+    dispatch.mockClear()
+    // A third tap within the window: count goes from 0 → 1, not >= 2 → no exit.
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    expect(dispatch).toHaveBeenCalledWith({ type: 'tap' })
+    expect(dispatch).not.toHaveBeenCalledWith({ type: 'request-exit' })
+  })
+})
