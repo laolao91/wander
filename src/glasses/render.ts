@@ -43,11 +43,18 @@ const NAV_BODY_HEIGHT = DISPLAY_HEIGHT - NAV_HEADER_HEIGHT
 
 /**
  * Approx chars per line at the G2's standard font; used for centering math.
- * G2 font isn't monospace — empirical tuning 2026-04-27: 65 placed WANDER
- * left of centre on real hardware (screenshot confirmed). Reduced to 50.
- * CLAUDE: verify on glasses — if still off-centre, try 46–48.
+ * G2 font isn't monospace — empirical tuning history:
+ *   65 → left of centre on real hardware (screenshot 2026-04-27 confirmed)
+ *   50 → still left-shifted on real hardware (screenshot 2026-04-28 confirmed)
+ * Root cause: space glyphs are much narrower than letter glyphs on the G2
+ * proportional font, so space-pad centering needs many more spaces than the
+ * character-count math suggests. LOADING uses LOADING_CHARS_PER_LINE (120)
+ * to compensate; adjust if WANDER still drifts left (try 140+) or overcorrects
+ * right (try 100).
  */
 const CHARS_PER_LINE = 50
+/** LOADING/title-card centering — more spaces to compensate for narrow space glyphs. */
+const LOADING_CHARS_PER_LINE = 120
 /** NAV_ACTIVE body is the narrower left column (≈58% of full width). */
 const NAV_BODY_CHARS_PER_LINE = 38
 
@@ -88,7 +95,7 @@ export function renderScreen(screen: Screen): RebuildPageContainer {
   switch (screen.name) {
     case 'LOADING':
       return singleText(
-        centeredBlock(['', '', 'WANDER', LOADING_RULE, '', screen.message]),
+        centeredBlock(['', '', 'WANDER', LOADING_RULE, '', screen.message], LOADING_CHARS_PER_LINE),
       )
 
     case 'POI_LIST':
@@ -612,8 +619,8 @@ function singleText(content: string): RebuildPageContainer {
 
 // ─── Text utilities ────────────────────────────────────────────────────
 
-function centeredBlock(lines: string[]): string {
-  return lines.map((l) => center(l, CHARS_PER_LINE)).join('\n')
+function centeredBlock(lines: string[], width = CHARS_PER_LINE): string {
+  return lines.map((l) => center(l, width)).join('\n')
 }
 
 function center(line: string, width: number): string {
