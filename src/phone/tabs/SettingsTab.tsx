@@ -5,6 +5,12 @@
  * in types.ts / state.ts / storage.ts. Pure view: receives PhoneState +
  * dispatch, never calls storage or bridge directly.
  *
+ * 2026-04-27 fixes:
+ *   - w-full on outer wrapper + SettingsGroup — content now fills screen
+ *   - Removed onPress from category ListItem — Toggle pill is the sole tap
+ *     target (onPress + Toggle.onChange both called handleCategoryToggle,
+ *     causing a double-toggle that appeared as a no-op)
+ *
  * Mockup source: `Point of Interest App/wander-mockup.html` lines 1030-1138
  * ("PHONE SCREEN 2: Settings Tab").
  */
@@ -78,10 +84,10 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
   // ─────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="px-3 pt-4 pb-8 space-y-6">
+    <div className="w-full px-4 pt-4 pb-8 space-y-6">
 
       {/* ── Search Radius ── */}
-      <SettingsGroup label="Search Radius">
+      <SettingsGroup label="Search Radius" className="w-full">
         <div className="px-2 pt-3 pb-1">
           <Slider
             value={radiusIndex === -1 ? 2 : radiusIndex}
@@ -109,7 +115,10 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
       </SettingsGroup>
 
       {/* ── Categories ── */}
-      <SettingsGroup label="Categories">
+      {/* onPress intentionally omitted: Toggle.onChange is the sole tap
+          target. Previously both fired handleCategoryToggle, causing a
+          double-toggle that appeared as a no-op. */}
+      <SettingsGroup label="Categories" className="w-full">
         {ALL_CATEGORIES.map((cat) => {
           const { glyph, label } = CATEGORY_META[cat]
           const enabled = settings.enabledCategories.includes(cat)
@@ -128,14 +137,13 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
                   onChange={() => handleCategoryToggle(cat)}
                 />
               }
-              onPress={() => handleCategoryToggle(cat)}
             />
           )
         })}
       </SettingsGroup>
 
       {/* ── Display (read-only) ── */}
-      <SettingsGroup label="Display">
+      <SettingsGroup label="Display" className="w-full">
         <ListItem
           title="Sort by"
           trailing={
@@ -151,7 +159,7 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
       </SettingsGroup>
 
       {/* ── Sync info card ── */}
-      <Card>
+      <Card className="w-full">
         <p className="text-[13px] leading-snug tracking-[-0.1px] text-text-secondary">
           {syncLabel}
         </p>

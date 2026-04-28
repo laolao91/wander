@@ -41,8 +41,13 @@ const NAV_HEADER_HEIGHT = TWO_LINE_HEADER_HEIGHT
 const NAV_BODY_Y = NAV_HEADER_HEIGHT
 const NAV_BODY_HEIGHT = DISPLAY_HEIGHT - NAV_HEADER_HEIGHT
 
-/** Approx char width at the G2's standard font; used for centering math. */
-const CHARS_PER_LINE = 65
+/**
+ * Approx chars per line at the G2's standard font; used for centering math.
+ * G2 font isn't monospace — empirical tuning 2026-04-27: 65 placed WANDER
+ * left of centre on real hardware (screenshot confirmed). Reduced to 50.
+ * CLAUDE: verify on glasses — if still off-centre, try 46–48.
+ */
+const CHARS_PER_LINE = 50
 /** NAV_ACTIVE body is the narrower left column (≈58% of full width). */
 const NAV_BODY_CHARS_PER_LINE = 38
 
@@ -285,13 +290,15 @@ function sentinelLine(label: string, isCursor: boolean): string {
 }
 
 function poiListLine(p: Poi, isCursor: boolean): string {
-  // Two lines per item — name on top, distance + walk time below (left-
-  // aligned). G2 fonts aren't monospace so true right-alignment via space
-  // padding looks ragged; stacking is cleaner and easier to read.
+  // Single line: icon + name (truncated) + distance.
+  // Previously two lines (name / distance+walkTime) but the G2 list
+  // view only renders the first line of multi-line item strings —
+  // confirmed by field test 2026-04-27 (no distance visible).
+  // Name is truncated to 32 chars to leave room for "  0.30 mi" at the end.
   const cursor = isCursor ? '> ' : '  '
-  const name = truncate(p.name, 50)
   const distance = formatDistance(p.distanceMiles)
-  return `${cursor}${p.categoryIcon} ${name}\n     ${distance}  ·  ~${p.walkMinutes} min`
+  const name = truncate(p.name, 32)
+  return `${cursor}${p.categoryIcon} ${name}  ${distance}`
 }
 
 function renderPoiDetail(poi: Poi): RebuildPageContainer {
