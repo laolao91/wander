@@ -5,14 +5,16 @@
  * `Date.now()` — effects come out as data. The phone UI (or a test) is
  * responsible for running them.
  *
- * Scope note: the Settings tab is the only tab this reducer needs today.
- * Nearby tab state (POI cache, connection indicator) will extend the
- * types + reducer in Phase 6 once §6.3 is resolved.
+ * Phase H (2026-04-27): added Nearby event handlers. The Nearby UI is
+ * not yet wired (Phase I), but the reducer is complete and testable now
+ * so the next session can start directly on App.tsx + NearbyTab.tsx.
  */
 
 import {
   INITIAL_PHONE_STATE,
+  INITIAL_NEARBY_STATE,
   type CategoryId,
+  type NearbyState,
   type PhoneEffect,
   type PhoneEvent,
   type PhoneState,
@@ -58,8 +60,118 @@ export function reduce(state: PhoneState, event: PhoneEvent): ReduceResult {
         syncStatus: 'error',
         syncError: event.message,
       })
+
+    // ── Nearby ────────────────────────────────────────────────────────
+
+    case 'nearby-refresh-requested':
+      // Reset to locating; discard any previous error. Existing pois +
+      // lastFetchTs stay visible while the new fetch is in flight so the
+      // UI can keep showing stale data rather than going blank.
+      return {
+        state: {
+          ...state,
+          nearby: {
+            ...state.nearby,
+            fetchStatus: 'locating',
+            errorMessage: null,
+          },
+        },
+        effects: [{ type: 'request-location' }],
+      }
+
+    case 'location-acquired':
+      return {
+        state: {
+          ...state,
+          nearby: {
+            ...state.nearby,
+            fetchStatus: 'fetching',
+            location: {
+              lat: event.lat,
+              lng: event.lng,
+              // Label arrives separately via location-label-resolved.
+              label: state.nearby.location?.label ?? null,
+            },
+          },
+        },
+        effects: [
+          {
+            type: 'fetch-nearby-pois',
+            lat: event.lat,
+            lng: event.lng,
+            settings: state.settings,
+          },
+        ],
+      }
+
+    case 'location-failed':
+      return noop({
+        ...state,
+        nearby: {
+          ...state.nearby,
+          fetchStatus: 'error-location',
+          errorMessage: event.message,
+        },
+      })
+
+    case 'location-label-resolved':
+      // Reverse-geocode label arrived — patch location without changing
+      // anything else. Safe to call in any fetchStatus.
+      if (!state.nearby.location) return noop(state)
+      return noop({
+        ...state,
+        nearby: {
+          ...state.nearby,
+          location: { ...state.nearby.location, label: event.label },
+        },
+      })
+
+    case 'nearby-pois-loaded':
+      return {
+        state: {
+          ...state,
+          nearby: {
+            ...state.nearby,
+            fetchStatus: 'success',
+            pois: event.pois,
+            lastFetchTs: event.fetchedAt,
+            errorMessage: null,
+          },
+        },
+        effects: [
+          {
+            type: 'cache-nearby-pois',
+            pois: event.pois,
+            fetchedAt: event.fetchedAt,
+          },
+        ],
+      }
+
+    case 'nearby-fetch-failed':
+      return noop({
+        ...state,
+        nearby: {
+          ...state.nearby,
+          fetchStatus: 'error-network',
+          errorMessage: event.message,
+        },
+      })
   }
 }
+
+// ─── Nearby helpers ───────────────────────────────────────────────────────
+
+/** Reset Nearby state to its initial shape (used by tests). */
+export function resetNearby(state: PhoneState): PhoneState {
+  return { ...state, nearby: INITIAL_NEARBY_STATE }
+}
+
+/** Convenience: patch only the nearby slice without touching settings. */
+function withNearby(state: PhoneState, nearby: Partial<NearbyState>): PhoneState {
+  return { ...state, nearby: { ...state.nearby, ...nearby } }
+}
+// Mark as used — withNearby is intentionally available for future callers.
+void withNearby
 
 /**
  * Apply a settings change: update state, mark sync in-flight, and emit

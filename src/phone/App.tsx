@@ -25,9 +25,10 @@ import { AppShell, NavBar, ScreenHeader, Card } from 'even-toolkit/web'
 import type { NavItem } from 'even-toolkit/web'
 import { useState, useEffect, useRef } from 'react'
 import { reduce, INITIAL_STATE } from './state'
-import { loadSettings, saveSettings } from './storage'
-import type { KVStore, } from './storage'
+import { loadSettings, saveSettings, saveNearbyCache } from './storage'
+import type { KVStore } from './storage'
 import type { PhoneEvent, PhoneEffect, PhoneState } from './types'
+import { categoryIdsToCategories } from './types'
 import { SettingsTab } from './tabs/SettingsTab'
 
 // ─── KV store (browser localStorage adapter) ─────────────────────────────
@@ -86,15 +87,35 @@ function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void
       })
       return
 
-    case 'broadcast-settings':
-      // v1.0: no direct phone→glasses bridge channel. The glasses re-reads
-      // settings from PhoneState on the next fetch-pois, which is triggered
-      // by tapping "Refresh nearby" on the glasses. Log so field tests can
-      // confirm settings are being emitted.
-      // CLAUDE: When Phase I lands, wire this to bridge.callEvenApp or the
-      // shared storage keys from storage.ts so the glasses picks them up.
-      console.log('[wander][phone] broadcast-settings (no-op in v1.0)', effect.settings)
+    case 'cache-nearby-pois':
+      // Non-fatal: a cache write failure doesn't affect the displayed pois.
+      saveNearbyCache(kv, effect.pois, effect.fetchedAt).catch((err: unknown) => {
+        console.warn('[wander][phone] cache-nearby-pois write failed', err)
+      })
       return
+
+    case 'request-location':
+    case 'fetch-nearby-pois':
+      // Phase I: wired in NearbyTab.tsx once the geolocation + fetch loop
+      // is built. The reducer emits these; App.tsx will route them then.
+      // CLAUDE: Implement in Phase I session 1 (HANDOFF_2026-04-27.md §3.1).
+      console.log('[wander][phone] effect not yet wired:', effect.type)
+      return
+
+    case 'broadcast-settings': {
+      // v1.0: no direct phone→glasses bridge channel. The glasses re-reads
+      // settings on the next "Refresh nearby" tap. Log the fully-mapped
+      // Category[] (glasses-side names) so field tests can confirm the
+      // right values would be sent when the channel is wired in Phase I.
+      // CLAUDE: Wire this to bridge.callEvenApp or shared storage keys once
+      // Phase I lands (HANDOFF_2026-04-27.md §3.2).
+      const mappedCategories = categoryIdsToCategories(effect.settings.enabledCategories)
+      console.log('[wander][phone] broadcast-settings (no-op in v1.0)', {
+        radiusMiles: effect.settings.radiusMiles,
+        categories: mappedCategories,
+      })
+      return
+    }
   }
 }
 

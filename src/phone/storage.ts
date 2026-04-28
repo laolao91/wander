@@ -23,13 +23,18 @@ import {
   DEFAULT_SETTINGS,
   RADIUS_CHOICES,
   type CategoryId,
+  type Poi,
   type RadiusMiles,
   type Settings,
 } from './types'
 
 export const STORAGE_KEYS = {
+  // Settings (Phase H)
   radius: 'wander_radius',
   categories: 'wander_categories',
+  // Nearby cache (Phase I) — WANDER_BUILD_SPEC.md §10
+  poiCache: 'wander_last_poi_cache',
+  poiCacheTs: 'wander_last_fetch_ts',
 } as const
 
 /**
@@ -173,4 +178,66 @@ function parseCategories(raw: string | null): readonly CategoryId[] {
     typeof x === 'string' && known.has(x as CategoryId),
   )
   return filtered
+}
+
+// ─── Nearby cache (Phase I) ────────────────────────────────────────────────
+
+export interface NearbyCacheEntry {
+  pois: readonly Poi[]
+  fetchedAt: number
+}
+
+/**
+ * Load the cached POI list from storage. Returns null when:
+ *   - Keys are missing (first run)
+ *   - JSON is malformed
+ *   - The stored array doesn't look like Poi[] (shape guard)
+ *
+ * Intentionally lenient on individual POI fields — we prefer showing
+ * slightly stale or partial data over showing nothing.
+ */
+export async function loadNearbyCache(kv: KVStore): Promise<NearbyCacheEntry | null> {
+  const [cacheRaw, tsRaw] = await Promise.all([
+    kv.get(STORAGE_KEYS.poiCache),
+    kv.get(STORAGE_KEYS.poiCacheTs),
+  ])
+  if (cacheRaw === null || tsRaw === null) return null
+
+  const fetchedAt = Number(tsRaw)
+  if (!Number.isFinite(fetchedAt) || fetchedAt <= 0) return null
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(cacheRaw)
+  } catch {
+    return null
+  }
+  if (!Array.isArray(parsed)) return null
+
+  // Minimal shape guard: each item must at least have id + name strings.
+  const pois = parsed.filter(
+    (x): x is Poi =>
+      typeof x === 'object' &&
+      x !== null &&
+      typeof (x as Record<string, unknown>).id === 'string' &&
+      typeof (x as Record<string, unknown>).name === 'string',
+  )
+
+  return { pois, fetchedAt }
+}
+
+/**
+ * Persist the current Nearby POI list and fetch timestamp to storage.
+ * Errors propagate — the caller (App.tsx `cache-nearby-pois` handler)
+ * logs and swallows; a cache write failure is non-fatal.
+ */
+export async function saveNearbyCache(
+  kv: KVStore,
+  pois: readonly Poi[],
+  fetchedAt: number,
+): Promise<void> {
+  await Promise.all([
+    kv.set(STORAGE_KEYS.poiCache, JSON.stringify(pois)),
+    kv.set(STORAGE_KEYS.poiCacheTs, String(fetchedAt)),
+  ])
 }
