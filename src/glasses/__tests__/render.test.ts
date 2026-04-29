@@ -428,14 +428,13 @@ describe('renderScreen NAV_ACTIVE', () => {
   })
 
   it('body separator is narrow enough to render as a single line in the nav column', () => {
-    // NAV_ACTIVE body is ≈38 chars wide; a 40-char RULE wraps into
-    // 2-3 stacked bars at screen bottom (real-HW regression 2026-04-24).
-    // Assert we use a narrower separator here.
+    // NAV body content width = 328px; at 20px/glyph, max 16 bars fit.
+    // Previously 24 bars (480px) wrapped to 2 lines — fixed 2026-04-28.
     const body = renderScreen(baseNav).textObject?.[1].content ?? ''
-    // No 40-run of the heavy-rule glyph anywhere in the nav body.
-    expect(body).not.toMatch(/━{40}/)
-    // The separator is still present (24 runs is intentional).
-    expect(body).toMatch(/━{24}/)
+    // No 17+ run of the heavy-rule glyph (would exceed 328px).
+    expect(body).not.toMatch(/━{17}/)
+    // The separator is still present (16 runs is intentional).
+    expect(body).toMatch(/━{16}/)
   })
 
   it('second line shows ETA + cardinal bearing (mockup parity §2 C3 — 3-stat row)', () => {

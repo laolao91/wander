@@ -53,8 +53,17 @@ const NAV_BODY_HEIGHT = DISPLAY_HEIGHT - NAV_HEADER_HEIGHT
  * right (try 100).
  */
 const CHARS_PER_LINE = 50
-/** LOADING/title-card centering — more spaces to compensate for narrow space glyphs. */
-const LOADING_CHARS_PER_LINE = 120
+// LOADING title-card centering: space glyphs ≈ 4.6px on the G2 proportional
+// font (derived from screenshot at LOADING_CHARS_PER_LINE=120). WANDER (6
+// chars, ~90px wide) and LOADING_RULE (9 `─` chars, ~198px wide) each need
+// a different virtual width to be individually centered at x=288.
+// Formula: center at 288 → left edge = 288 − halfWidth; pad = (leftEdge − 8) / 4.6
+//   WANDER:       left=243 → pad≈51 → virtualWidth = 6 + 51×2 = 108
+//   LOADING_RULE: left=189 → pad≈40 → virtualWidth = 9 + 40×2 = 89
+// Adjust if hardware test shows asymmetry (raise 108 if WANDER drifts left,
+// raise 89 if rule drifts left — they are independent).
+const LOADING_WANDER_WIDTH = 108
+const LOADING_RULE_WIDTH = 89
 /** NAV_ACTIVE body is the narrower left column (≈58% of full width). */
 const NAV_BODY_CHARS_PER_LINE = 38
 
@@ -76,14 +85,14 @@ const NAV_MAP_Y = NAV_BODY_Y + Math.floor((NAV_BODY_HEIGHT - MINIMAP_HEIGHT) / 2
 // DRAWINGS HEAVY HORIZONTAL) is wider than alphanumerics. A 40-glyph
 // rule wrapped to two stacked lines on real hardware (POI_DETAIL
 // screenshot, 2026-04-26). 28 glyphs fits the body without wrapping
-// at the same visual weight. Matches the NAV_RULE pattern (24 glyphs
-// for the narrower nav body).
+// at the same visual weight. Measured: 28 × '━' fills 560px → each
+// glyph is exactly 20px wide.
 const RULE = '━'.repeat(28)
-// NAV_ACTIVE's body column is only ≈38 chars wide — a 40-char RULE wraps
-// into 2-3 stacked bars at the bottom of the screen (confirmed
-// 2026-04-24 sim screenshot). Use a narrower rule in the nav body so
-// the separator renders as a single line.
-const NAV_RULE = '━'.repeat(24)
+// NAV_ACTIVE body column: NAV_TEXT_WIDTH=336 - 2×paddingLength(4) = 328px.
+// Maximum bars that fit without wrapping: floor(328 / 20px) = 16.
+// Previously 24 (=480px > 328px) which caused the double-line artifact
+// on real hardware (2026-04-28 confirmed). Fixed to 16.
+const NAV_RULE = '━'.repeat(16)
 // LOADING uses a thinner rule between WANDER and the subtitle per the
 // mockup's visual weight — `─` (U+2500) rather than `━` (U+2501).
 // See HANDOFF.md §2 C4.
@@ -94,9 +103,7 @@ const LOADING_RULE = '─'.repeat(9)
 export function renderScreen(screen: Screen): RebuildPageContainer {
   switch (screen.name) {
     case 'LOADING':
-      return singleText(
-        centeredBlock(['', '', 'WANDER', LOADING_RULE, '', screen.message], LOADING_CHARS_PER_LINE),
-      )
+      return singleText(renderLoadingContent(screen.message))
 
     case 'POI_LIST':
       return renderPoiList(
@@ -615,6 +622,38 @@ function singleText(content: string): RebuildPageContainer {
       }),
     ],
   })
+}
+
+// ─── LOADING render ────────────────────────────────────────────────────
+
+/**
+ * Title-card content for the LOADING screen.
+ *
+ * WANDER and the thin rule are centred independently because they have
+ * different character counts — using the same `width` for both would
+ * shift them in opposite directions. Space glyph ≈ 4.6px on the G2
+ * proportional font (empirical, 2026-04-28 screenshot analysis):
+ *
+ *   WANDER (6 chars, ~90px wide):
+ *     leftEdge = 288 − 45 = 243 → pad = (243 − 8) / 4.6 ≈ 51
+ *     → LOADING_WANDER_WIDTH = 6 + 51 × 2 = 108
+ *
+ *   LOADING_RULE (9 `─` chars, ~198px wide):
+ *     leftEdge = 288 − 99 = 189 → pad = (189 − 8) / 4.6 ≈ 39
+ *     → LOADING_RULE_WIDTH = 9 + 39 × 2 = 87  (rounded to 89 for safety)
+ *
+ * Adjust LOADING_WANDER_WIDTH up if WANDER drifts left on hardware,
+ * down if it drifts right. LOADING_RULE_WIDTH is independent.
+ */
+function renderLoadingContent(message: string): string {
+  return [
+    '',
+    '',
+    center('WANDER', LOADING_WANDER_WIDTH),
+    center(LOADING_RULE, LOADING_RULE_WIDTH),
+    '',
+    message,
+  ].join('\n')
 }
 
 // ─── Text utilities ────────────────────────────────────────────────────
