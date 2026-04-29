@@ -198,21 +198,6 @@ function reasonFor(err: unknown): 'location' | 'network' | 'empty' {
 
 // ─── Browser-API defaults ────────────────────────────────────────────────
 
-// ⚠️ REMOVE BEFORE EVENHUB STORE SUBMISSION ⚠️
-// Dev-only mock: the simulator's WebView has no geolocation, so we honor
-// VITE_MOCK_LAT / VITE_MOCK_LNG from .env.local when running under Vite
-// dev (`import.meta.env.DEV === true`). Gated on DEV so it is stripped
-// from the production bundle, but we still want to delete this block
-// before submission — no spoofed or dummy data should ship.
-// Tracked in memory: project_wander_dev_geo_mock.md.
-function readDevMockCoords(): { lat: number; lng: number } | null {
-  if (!import.meta.env.DEV) return null
-  const lat = parseFloat(import.meta.env.VITE_MOCK_LAT ?? '')
-  const lng = parseFloat(import.meta.env.VITE_MOCK_LNG ?? '')
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
-  return { lat, lng }
-}
-
 // Wall-clock ceiling for the one-shot geolocation lookup. The SDK's
 // PositionOptions.timeout is 10s, but on real G2 hardware we've seen the
 // WebView's getCurrentPosition never fire either callback — the loading
@@ -221,12 +206,6 @@ function readDevMockCoords(): { lat: number; lng: number } | null {
 const GEOLOCATE_WALL_CLOCK_MS = 15000
 
 function defaultGeolocate(): Promise<{ lat: number; lng: number } | null> {
-  const mock = readDevMockCoords()
-  if (mock) {
-    console.log('[wander][geo] using DEV mock', mock)
-    return Promise.resolve(mock)
-  }
-
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
     console.warn('[wander][geo] no navigator.geolocation — resolving null')
     return Promise.resolve(null)
@@ -271,15 +250,6 @@ function defaultOpenUrl(url: string): void {
 function defaultWatchPosition(
   onPosition: (lat: number, lng: number) => void,
 ): () => void {
-  const mock = readDevMockCoords()
-  if (mock) {
-    // Fire once on next tick so subscribers see the same contract as the
-    // real API (asynchronous first sample). No ongoing updates — the
-    // simulator has nothing to update from.
-    const timer = setTimeout(() => onPosition(mock.lat, mock.lng), 0)
-    return () => clearTimeout(timer)
-  }
-
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
     return () => {}
   }

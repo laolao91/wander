@@ -4,12 +4,21 @@
   "name": "Wander",
   "version": "1.0.0",
   "min_app_version": "0.1.0",
+  "min_sdk_version": "0.0.10",
   "tagline": "Discover what's around you",
   "description": "Wander shows you what's nearby — landmarks, parks, museums, restaurants, and hidden gems — ranked by how close they are. Tap anything to get Wikipedia context and walking directions, all on your G2 glasses without touching your phone.",
   "author": "Steven Lao",
   "entrypoint": "index.html",
-  "permissions": {
-    "network": ["wander-six-phi.vercel.app"],
-    "location": true
-  }
+  "permissions": [
+    {
+      "name": "network",
+      "desc": "Fetch nearby points of interest and Wikipedia summaries from the Wander API",
+      "whitelist": ["https://wander-six-phi.vercel.app"]
+    },
+    {
+      "name": "location",
+      "desc": "Find points of interest near your current location"
+    }
+  ],
+  "supported_languages": ["en"]
 }
