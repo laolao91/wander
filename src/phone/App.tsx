@@ -102,7 +102,22 @@ function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void
           })
         },
         (err) => {
-          dispatch({ type: 'location-failed', message: err.message })
+          // Map raw GeolocationPositionError codes to actionable messages.
+          // Code 1 (PERMISSION_DENIED) can fire on Android even when the user
+          // hasn't denied anything — EvenHub's prototype/sideload WebView
+          // doesn't always forward the host app's location permission into the
+          // WebView context. Production installs (via EvenHub store) resolve
+          // this. Code 2/3 are genuine device/timeout failures.
+          let message: string
+          if (err.code === 1 /* PERMISSION_DENIED */) {
+            message =
+              'Location permission is required. If you\'ve already granted it, try force-quitting and reopening the app.'
+          } else if (err.code === 2 /* POSITION_UNAVAILABLE */) {
+            message = 'Your location couldn\'t be determined. Make sure location services are enabled.'
+          } else {
+            message = 'Location request timed out. Check your location settings and try again.'
+          }
+          dispatch({ type: 'location-failed', message })
         },
         { timeout: 10_000, maximumAge: 30_000 },
       )
