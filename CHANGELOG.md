@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-04-29
+## [1.0.1] - 2026-04-29
 
 G2 status dot, geocoding, settings sync, nav tightened
+
+## [1.0.0] - 2026-04-29
+
+Initial release
 
 ### Added
 - Phase 1 scaffold: Vite + React 19 + TypeScript + Tailwind v4
