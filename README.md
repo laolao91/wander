@@ -62,6 +62,9 @@ Set your preferred language and Wander routes all Wikipedia content, walking ins
 **⚡ Fully Hands-Free**
 Three gestures cover everything: scroll up, scroll down, tap. Double-tap goes back. The entire app is navigable without touching your phone after launch.
 
+**📱 Phone Companion**
+The companion app shows nearby POIs grouped by category with live distance, a refresh bar with accurate "updated X min ago" timing, and a neighbourhood label in the header (e.g. "Upper West Side") resolved via reverse geocoding. A connection status dot shows whether your G2 is paired. Settings — search radius and category filters — sync to the glasses instantly without a restart.
+
 ---
 
 ## How It Works
@@ -116,6 +119,7 @@ All endpoints are Vercel Serverless Functions. Base URL: `https://wander-six-phi
 | `GET /api/poi` | `lat`, `lng`, `lang?`, `categories?` | Nearby POIs (Wikipedia + OSM merged) |
 | `GET /api/wiki` | `title`, `lang?` | Wikipedia article with 380-char pagination |
 | `GET /api/route` | `fromLat`, `fromLng`, `toLat`, `toLng`, `lang?` | Walking directions (ORS foot-walking) |
+| `GET /api/geocode` | `lat`, `lng` | Reverse geocode to neighbourhood label (Nominatim) |
 
 All endpoints set `Vary: Accept-Language` for correct edge caching.
 
@@ -131,7 +135,7 @@ All endpoints set `Vary: Accept-Language` for correct edge caching.
 | POI data | Wikipedia GeoSearch API + Overpass/OSM |
 | Routing | OpenRouteService foot-walking profile |
 | Minimap | HTML Canvas → PNG → SDK `updateImageRawData` |
-| Tests | Vitest — 122 unit tests |
+| Tests | Vitest — 267 unit tests |
 
 ---
 
@@ -143,6 +147,7 @@ api/
   poi.ts             # POI discovery (Wikipedia + OSM merge)
   wiki.ts            # Wikipedia article fetch + pagination
   route.ts           # ORS walking directions proxy
+  geocode.ts         # Reverse geocode → neighbourhood label (Nominatim)
 
 src/glasses/
   state.ts           # Pure reducer — all app logic lives here
@@ -152,6 +157,15 @@ src/glasses/
   minimap.ts         # Canvas minimap geometry + PNG encoding
   api.ts             # Typed API client wrappers
   screens/types.ts   # Discriminated union for the 8 screen variants
+
+src/phone/
+  App.tsx            # Companion app root — layout, effects, G2 status dot
+  state.ts           # Phone reducer (settings + nearby)
+  types.ts           # PhoneState, events, effects, settings types
+  storage.ts         # KV store adapter — persists settings + POI cache
+  tabs/
+    NearbyTab.tsx    # POI list grouped by category, refresh bar, error states
+    SettingsTab.tsx  # Radius slider, category toggles, sync status
 ```
 
 ---

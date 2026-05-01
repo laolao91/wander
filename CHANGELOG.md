@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-04-29
+
+G2 status dot, geocoding, settings sync, nav tightened
+
 ### Added
 - Phase 1 scaffold: Vite + React 19 + TypeScript + Tailwind v4
 - even-toolkit web components + Even Hub SDK integration stub
