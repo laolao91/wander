@@ -54,16 +54,19 @@ const NAV_BODY_HEIGHT = DISPLAY_HEIGHT - NAV_HEADER_HEIGHT
  */
 const CHARS_PER_LINE = 50
 // LOADING title-card centering: space glyphs ≈ 4.6px on the G2 proportional
-// font (derived from screenshot at LOADING_CHARS_PER_LINE=120). WANDER (6
-// chars, ~90px wide) and LOADING_RULE (9 `─` chars, ~198px wide) each need
-// a different virtual width to be individually centered at x=288.
+// font (derived from screenshot at LOADING_CHARS_PER_LINE=120). Each element
+// is centred independently — they have different character counts and glyph
+// widths so a single shared width would shift them in opposite directions.
 // Formula: center at 288 → left edge = 288 − halfWidth; pad = (leftEdge − 8) / 4.6
-//   WANDER:       left=243 → pad≈51 → virtualWidth = 6 + 51×2 = 108
-//   LOADING_RULE: left=189 → pad≈40 → virtualWidth = 9 + 40×2 = 89
-// Adjust if hardware test shows asymmetry (raise 108 if WANDER drifts left,
-// raise 89 if rule drifts left — they are independent).
+//   WANDER (6 uppercase chars, ~90px):   left=243 → pad≈51 → width = 6  + 51×2 = 108
+//   LOADING_RULE (9 thin-rule chars):    left=189 → pad≈40 → width = 9  + 40×2 = 89
+//   message (25 mixed-case chars, ~204px): left=186 → pad≈39 → width = 25 + 39×2 = 103
+//     rounded to 100 as a clean starting point — hardware verify needed.
+//     (raise toward 110 if message drifts left; lower toward 90 if it drifts right)
+// All three are independent — adjust one without touching the others.
 const LOADING_WANDER_WIDTH = 108
 const LOADING_RULE_WIDTH = 89
+const LOADING_MESSAGE_WIDTH = 100
 /** NAV_ACTIVE body is the narrower left column (≈58% of full width). */
 const NAV_BODY_CHARS_PER_LINE = 38
 
@@ -652,7 +655,7 @@ function renderLoadingContent(message: string): string {
     center('WANDER', LOADING_WANDER_WIDTH),
     center(LOADING_RULE, LOADING_RULE_WIDTH),
     '',
-    message,
+    center(message, LOADING_MESSAGE_WIDTH),
   ].join('\n')
 }
 
