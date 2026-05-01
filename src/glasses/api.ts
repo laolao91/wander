@@ -10,7 +10,15 @@
  * a single `ApiError` so callers don't have to discriminate by endpoint.
  */
 
-const API_BASE = '/api'
+// In production (EHPK or Vercel-hosted), the WebView base URL may not be
+// wander-six-phi.vercel.app, so relative paths like '/api/poi' can't resolve.
+// WebKit throws "The string did not match the expected pattern" when fetch()
+// is given a relative URL against a non-http(s) base (e.g. a local file or
+// EvenHub's internal scheme). Use the absolute URL in production builds;
+// keep relative in dev so Vite's proxy still works.
+const API_BASE = import.meta.env.DEV
+  ? '/api'
+  : 'https://wander-six-phi.vercel.app/api'
 // Field-test 2026-04-25 §3.1: glasses observed "Fetching nearby
 // places..." stuck for 1+ minute. Vercel Hobby caps function execution
 // at 10s, so any wallclock past ~12s on the client means the request
