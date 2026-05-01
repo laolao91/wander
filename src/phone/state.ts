@@ -101,6 +101,9 @@ export function reduce(state: PhoneState, event: PhoneEvent): ReduceResult {
             lng: event.lng,
             settings: state.settings,
           },
+          // Reverse-geocode in parallel — result patches the location label
+          // in the header. Non-fatal if it fails or arrives late.
+          { type: 'geocode-location', lat: event.lat, lng: event.lng },
         ],
       }
 

@@ -537,10 +537,16 @@ function navBodyText(screen: Extract<Screen, { name: 'NAV_ACTIVE' }>): string {
   }
 
   if (nextStep) {
-    lines.push('', `Next: ${truncate(nextStep.instruction, NAV_BODY_CHARS_PER_LINE - 6)}`)
+    // "then" reads more naturally mid-walk than "Next:" and saves a char.
+    // No leading blank — the step block above already ends with a blank
+    // when a street line is absent, and we can't guarantee one is there,
+    // so the step instruction itself provides visual separation.
+    lines.push(`then ${truncate(nextStep.instruction, NAV_BODY_CHARS_PER_LINE - 5)}`)
   }
 
-  lines.push('', NAV_RULE, '', '> Tap to stop nav', '  Double-tap → list')
+  // Single hint line saves two rows vs the previous two-liner + blank gap.
+  // "2×" is shorter than "Double-tap" and still clear on a glance.
+  lines.push('', NAV_RULE, '> Tap stop  ·  2×→list')
   return lines.join('\n')
 }
 

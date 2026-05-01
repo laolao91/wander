@@ -10,7 +10,7 @@
  */
 
 import { SectionHeader, ListItem, Loading, EmptyState } from 'even-toolkit/web'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { PhoneState, PhoneEvent } from '../types'
 import type { Poi } from '../../glasses/api'
 
@@ -94,6 +94,14 @@ export function NearbyTab({ state, dispatch }: NearbyTabProps) {
       dispatch({ type: 'nearby-refresh-requested' })
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Force a re-render every 60 s so "Updated X min ago" stays accurate.
+  // The tick value is intentionally unused — it just drives the re-render.
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   const isLoading = nearby.fetchStatus === 'locating' || nearby.fetchStatus === 'fetching'
   const hasPois = nearby.pois.length > 0

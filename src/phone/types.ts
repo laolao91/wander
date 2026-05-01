@@ -249,6 +249,11 @@ export type PhoneEffect =
    * Settings are baked in at emit time so the effect is self-contained.
    */
   | { type: 'fetch-nearby-pois'; lat: number; lng: number; settings: Settings }
+  /**
+   * Reverse-geocode coordinates to a neighbourhood label.
+   * Result dispatched as `location-label-resolved`; non-fatal on failure.
+   */
+  | { type: 'geocode-location'; lat: number; lng: number }
   /** Persist the POI list + timestamp to the Nearby cache keys. */
   | { type: 'cache-nearby-pois'; pois: readonly Poi[]; fetchedAt: number }
 

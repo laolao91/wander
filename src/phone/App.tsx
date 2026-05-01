@@ -2,20 +2,22 @@
  * Phone companion app root.
  *
  * Layout (2026-04-28 redesign, matching wander-mockup.html):
- *   - Custom header: Wander logo pill + current tab name
+ *   - Custom header: Wander logo pill + current tab name + G2 status dot
  *   - Scrollable content area (full-width, flex-1)
  *   - Bottom tab bar: Nearby | Settings  ← matches mockup p-tabbar
  *
- * Previously: AppShell + NavBar in header — content appeared on the right
- * side of the screen on real hardware. Replaced with an explicit flex-col
- * div at h-screen + w-full to ensure full-width rendering in the WebView.
- *
  * Effect handling:
  *   persist-settings     → saveSettings(kv)
- *   broadcast-settings   → no-op log (Phase I §3.2)
+ *   broadcast-settings   → dispatches 'wander-settings-changed' CustomEvent
+ *                          so the glasses bridge (same WebView) can apply them
  *   request-location     → navigator.geolocation.getCurrentPosition
+ *   geocode-location     → GET /api/geocode → location-label-resolved
  *   fetch-nearby-pois    → fetchPois → nearby-pois-loaded / nearby-fetch-failed
  *   cache-nearby-pois    → saveNearbyCache(kv) — non-fatal on error
+ *
+ * G2 connection status:
+ *   bridge.ts dispatches 'wander-g2-status' CustomEvent when device status
+ *   changes. App listens and shows a coloured dot in the header.
  *
  * Boot sequence:
  *   1. loadSettings(kv)       → settings-hydrated
@@ -80,13 +82,36 @@ function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void
       return
 
     case 'broadcast-settings': {
+      // Notify the glasses bridge (running in the same WebView) that settings
+      // changed. bridge.ts listens for this event and applies a settings-changed
+      // event to the glasses reducer so the next POI fetch uses the new values.
       const mappedCategories = categoryIdsToCategories(effect.settings.enabledCategories)
-      console.log('[wander][phone] broadcast-settings (no-op in v1.0)', {
-        radiusMiles: effect.settings.radiusMiles,
-        categories: mappedCategories,
-      })
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('wander-settings-changed', {
+            detail: {
+              radiusMiles: effect.settings.radiusMiles,
+              categories: mappedCategories,
+            },
+          }),
+        )
+      }
       return
     }
+
+    case 'geocode-location':
+      fetch(`/api/geocode?lat=${effect.lat}&lng=${effect.lng}`)
+        .then((r) => r.json())
+        .then((data: { label?: string }) => {
+          if (typeof data.label === 'string') {
+            dispatch({ type: 'location-label-resolved', label: data.label })
+          }
+        })
+        .catch((err: unknown) => {
+          // Non-fatal — header falls back to "Near you".
+          console.warn('[wander][phone] geocode-location failed', err)
+        })
+      return
 
     case 'request-location':
       if (!navigator.geolocation) {
@@ -152,6 +177,19 @@ type Tab = 'nearby' | 'settings'
 export function App() {
   const [tab, setTab] = useState<Tab>('nearby')
 
+  // G2 connection status — null = not yet known (grey), true = connected
+  // (green), false = disconnected (amber). Set by 'wander-g2-status'
+  // CustomEvents dispatched from bridge.ts via bridge.onDeviceStatusChanged.
+  const [g2Connected, setG2Connected] = useState<boolean | null>(null)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { connected } = (e as CustomEvent<{ connected: boolean }>).detail
+      setG2Connected(connected)
+    }
+    window.addEventListener('wander-g2-status', handler)
+    return () => window.removeEventListener('wander-g2-status', handler)
+  }, [])
+
   const [phoneState, setPhoneState] = useState<PhoneState>(INITIAL_STATE)
   const phoneStateRef = useRef<PhoneState>(INITIAL_STATE)
   phoneStateRef.current = phoneState
@@ -212,12 +250,32 @@ export function App() {
           <span className="text-[15px] text-text-dim leading-none">/</span>
           <span className="text-[15px] text-text leading-none font-normal">{tabTitle}</span>
 
-          {/* Location label — Nearby tab only, right-aligned */}
+          {/* Location label — Nearby tab only */}
           {tab === 'nearby' && phoneState.nearby.location && (
             <span className="ml-auto text-[11px] text-text-dim truncate">
               {phoneState.nearby.location.label ?? 'Near you'}
             </span>
           )}
+
+          {/* G2 connection status dot — null=grey (unknown), true=green, false=amber */}
+          <span
+            className={[
+              'shrink-0 w-2 h-2 rounded-full',
+              tab === 'nearby' && phoneState.nearby.location ? '' : 'ml-auto',
+              g2Connected === null
+                ? 'bg-text-dim opacity-40'
+                : g2Connected
+                  ? 'bg-green-500'
+                  : 'bg-yellow-500',
+            ].join(' ')}
+            title={
+              g2Connected === null
+                ? 'G2: waiting'
+                : g2Connected
+                  ? 'G2: connected'
+                  : 'G2: disconnected'
+            }
+          />
         </div>
       </div>
 

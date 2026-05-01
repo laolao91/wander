@@ -444,19 +444,19 @@ describe('renderScreen NAV_ACTIVE', () => {
     expect(body).toMatch(/~\d+ min\s+·\s+[NSEW]{1,2}/)
   })
 
-  it('shows a "Next:" preview line when a next step exists', () => {
+  it('shows a "then" preview line when a next step exists', () => {
     const body = renderScreen(baseNav).textObject?.[1].content ?? ''
     // Fixture has 2 steps; current step index = 0, so the preview should
-    // surface the second step's instruction.
-    expect(body).toContain('Next: Turn left onto 86th St')
+    // surface the second step's instruction prefixed with "then".
+    expect(body).toContain('then Turn left onto 86th St')
   })
 
-  it('omits the "Next:" preview on the last step', () => {
+  it('omits the "then" preview on the last step', () => {
     const body = renderScreen({
       ...baseNav,
       currentStepIndex: 1, // last step in the 2-step fixture
     }).textObject?.[1].content ?? ''
-    expect(body).not.toMatch(/Next:/)
+    expect(body).not.toMatch(/\bthen\b/)
   })
 
   it('body shows arrow, distance, and current step instruction', () => {

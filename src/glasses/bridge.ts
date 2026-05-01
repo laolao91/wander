@@ -19,6 +19,7 @@
 
 import {
   CreateStartUpPageContainer,
+  DeviceStatus,
   EvenAppBridge,
   EvenHubEvent,
   ImageRawDataUpdate,
@@ -156,12 +157,47 @@ export async function initGlasses(): Promise<void> {
     translateGlassesEvent(evt, state, dispatch, bridge)
   })
 
+  // G2 connection status → phone UI.
+  // Dispatch a CustomEvent so the React phone companion (same WebView) can
+  // show a connection dot in the header without needing a direct reference
+  // to the bridge. The phone listens for 'wander-g2-status'.
+  const unsubscribeStatus = bridge.onDeviceStatusChanged((status: DeviceStatus) => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('wander-g2-status', {
+          detail: { connected: status.isConnected() },
+        }),
+      )
+    }
+  })
+
+  // Phone settings → glasses reducer.
+  // When the user changes radius or categories in the Settings tab, App.tsx
+  // dispatches 'wander-settings-changed'. We apply them here so the next
+  // fetch (background or user-triggered) uses the updated values.
+  const handleSettingsChanged = (e: globalThis.Event) => {
+    const { radiusMiles, categories } = (
+      e as CustomEvent<{ radiusMiles: number; categories: string[] }>
+    ).detail
+    dispatch({
+      type: 'settings-changed',
+      settings: { radiusMiles, categories: categories as import('./api').Category[] },
+    })
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('wander-settings-changed', handleSettingsChanged)
+  }
+
   // Stop the background timer and any GPS watch on system exit.
   // (The unsubscribe + clearInterval calls are safe to call multiple times.)
   const cleanup = () => {
     clearInterval(refreshTimer)
     unsubscribe()
+    unsubscribeStatus()
     runner.dispose()
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('wander-settings-changed', handleSettingsChanged)
+    }
   }
   if (typeof window !== 'undefined') {
     window.addEventListener('beforeunload', cleanup)

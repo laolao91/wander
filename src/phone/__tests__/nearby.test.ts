@@ -159,12 +159,15 @@ describe('location-acquired', () => {
     const result = reduce(locatingState, { type: 'location-acquired', lat: 40.71, lng: -74.0 })
     expect(nearby(result.state).fetchStatus).toBe('fetching')
     expect(nearby(result.state).location).toEqual({ lat: 40.71, lng: -74.0, label: null })
-    expect(result.effects).toEqual([{
-      type: 'fetch-nearby-pois',
-      lat: 40.71,
-      lng: -74.0,
-      settings: locatingState.settings,
-    }])
+    expect(result.effects).toEqual([
+      {
+        type: 'fetch-nearby-pois',
+        lat: 40.71,
+        lng: -74.0,
+        settings: locatingState.settings,
+      },
+      { type: 'geocode-location', lat: 40.71, lng: -74.0 },
+    ])
   })
 
   it('preserves an existing reverse-geocode label on the location', () => {
