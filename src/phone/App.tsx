@@ -113,7 +113,17 @@ function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void
         })
       return
 
-    case 'request-location':
+    case 'request-location': {
+      // Dev simulator mock — reads VITE_MOCK_LAT/LNG from .env.local.
+      // Tree-shaken out of production builds (import.meta.env.DEV = false).
+      if (import.meta.env.DEV) {
+        const mockLat = parseFloat(import.meta.env.VITE_MOCK_LAT ?? '')
+        const mockLng = parseFloat(import.meta.env.VITE_MOCK_LNG ?? '')
+        if (!isNaN(mockLat) && !isNaN(mockLng)) {
+          dispatch({ type: 'location-acquired', lat: mockLat, lng: mockLng })
+          return
+        }
+      }
       if (!navigator.geolocation) {
         dispatch({ type: 'location-failed', message: 'Geolocation not supported on this device.' })
         return
@@ -147,6 +157,7 @@ function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void
         { timeout: 10_000, maximumAge: 30_000 },
       )
       return
+    }
 
     case 'fetch-nearby-pois':
       fetchPois({
@@ -286,6 +297,11 @@ export function App() {
         ) : (
           <SettingsTab state={phoneState} dispatch={dispatch} />
         )}
+      </div>
+
+      {/* ── Version stamp ── */}
+      <div className="shrink-0 text-center py-0.5 text-[10px] text-text-dim opacity-40 select-none bg-bg">
+        v{__APP_VERSION__}
       </div>
 
       {/* ── Bottom tab bar — matches mockup p-tabbar ── */}

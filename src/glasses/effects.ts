@@ -198,6 +198,23 @@ function reasonFor(err: unknown): 'location' | 'network' | 'empty' {
 
 // ─── Browser-API defaults ────────────────────────────────────────────────
 
+/**
+ * Dev-only: read VITE_MOCK_LAT / VITE_MOCK_LNG from the environment.
+ * Returns null in production builds (tree-shaken by Vite) and when the
+ * vars aren't set. Set them in .env.local to bypass GPS in the simulator.
+ *
+ * ⚠️  STRIP BEFORE SUBMISSION — or just leave it; the DEV guard means
+ * these vars are never present in the EHPK production bundle.
+ */
+function readDevMockCoords(): { lat: number; lng: number } | null {
+  if (!import.meta.env.DEV) return null
+  const lat = parseFloat(import.meta.env.VITE_MOCK_LAT ?? '')
+  const lng = parseFloat(import.meta.env.VITE_MOCK_LNG ?? '')
+  if (isNaN(lat) || isNaN(lng)) return null
+  console.log('[wander][geo] DEV mock coords', { lat, lng })
+  return { lat, lng }
+}
+
 // Wall-clock ceiling for the one-shot geolocation lookup. The SDK's
 // PositionOptions.timeout is 10s, but on real G2 hardware we've seen the
 // WebView's getCurrentPosition never fire either callback — the loading
@@ -206,6 +223,8 @@ function reasonFor(err: unknown): 'location' | 'network' | 'empty' {
 const GEOLOCATE_WALL_CLOCK_MS = 15000
 
 function defaultGeolocate(): Promise<{ lat: number; lng: number } | null> {
+  const mock = readDevMockCoords()
+  if (mock) return Promise.resolve(mock)
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
     console.warn('[wander][geo] no navigator.geolocation — resolving null')
     return Promise.resolve(null)
@@ -250,6 +269,12 @@ function defaultOpenUrl(url: string): void {
 function defaultWatchPosition(
   onPosition: (lat: number, lng: number) => void,
 ): () => void {
+  const mock = readDevMockCoords()
+  if (mock) {
+    // Fire once immediately so NAV_ACTIVE gets a position on first paint.
+    setTimeout(() => onPosition(mock.lat, mock.lng), 0)
+    return () => {}
+  }
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
     return () => {}
   }

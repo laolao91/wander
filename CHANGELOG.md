@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-05-02
+
+Phone companion now shows version number (v1.1.1) above the tab bar.
+Dev simulator geo mock added to phone companion (reads VITE_MOCK_LAT/LNG
+from .env.local, tree-shaken in production builds).
+
 ## [1.1.0] - 2026-05-01
 
 Street tile minimap: NAV_ACTIVE minimap now renders CARTO dark street

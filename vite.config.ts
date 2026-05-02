@@ -15,6 +15,11 @@ export default defineConfig(({ mode }) => {
   const isDev = mode !== 'production'
   return {
     plugins: [react(), tailwindcss()],
+    // Inject package.json version at build time so the phone UI can show it
+    // without importing package.json at runtime.
+    define: {
+      __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? ''),
+    },
     server: {
       host: true,
       port: 5173,
