@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-02
+
+Navigation and UX overhaul. Double-tap now goes back to the previous screen
+on every screen; at the top level (POI list, errors) it calls EvenHub's native
+exit dialog (shutDownPageContainer(1)) instead of the custom confirm screen.
+Tap in NAV_ACTIVE re-routes from your current GPS position instead of
+stopping navigation. NAV_ACTIVE double-tap returns to POI_DETAIL (not the
+list), preserving context. POI_ACTIONS gains a "← Back" option to dismiss
+the menu and return to detail without navigating or going back to the list.
+Settings category/radius changes now auto-refresh the Nearby tab on the phone.
+
 ## [1.1.2] - 2026-05-02
 
 Fix API calls failing when app is installed via EvenHub (CORS). All four

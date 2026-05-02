@@ -116,21 +116,6 @@ export function renderScreen(screen: Screen): RebuildPageContainer {
         screen.cursorIndex ?? 0,
       )
 
-    case 'CONFIRM_EXIT':
-      return singleText(
-        centeredBlock([
-          '',
-          'Exit Wander?',
-          '',
-          '',
-          screen.cursorIndex === 1 ? '  No, keep exploring' : '> No, keep exploring',
-          screen.cursorIndex === 1 ? '> Yes, exit' : '  Yes, exit',
-          '',
-          '',
-          'Tap to confirm  ·  scroll to switch',
-        ]),
-      )
-
     case 'POI_DETAIL':
       return renderPoiDetail(screen.poi)
 
@@ -153,7 +138,7 @@ export function renderScreen(screen: Screen): RebuildPageContainer {
           screen.message,
           '',
           '> Tap to retry',
-          '  Double-tap to exit',
+          '  Double-tap to go back',
         ]),
       )
 
@@ -167,7 +152,7 @@ export function renderScreen(screen: Screen): RebuildPageContainer {
           screen.message,
           '',
           '> Tap to retry',
-          '  Double-tap to exit',
+          '  Double-tap to go back',
         ]),
       )
 
@@ -184,7 +169,7 @@ export function renderScreen(screen: Screen): RebuildPageContainer {
           screen.filtersAreNarrow ? 'enabling more categories.' : 'Try moving and refresh.',
           '',
           '> Tap to retry',
-          '  Double-tap to exit',
+          '  Double-tap to go back',
         ]),
       )
   }
@@ -368,7 +353,7 @@ function detailBodyText(poi: Poi): string {
     ? truncate(poi.wikiSummary.replace(/\s+/g, ' '), 260)
     : '(No description available.)'
   // Hint lives at the bottom of the body so the summary isn't interrupted.
-  return [summary, '', RULE, '', '> Tap for options  ·  Double-tap to exit'].join('\n')
+  return [summary, '', RULE, '', '> Tap for options  ·  2× to go back'].join('\n')
 }
 
 // ─── POI_ACTIONS ───────────────────────────────────────────────────────
@@ -437,6 +422,9 @@ const ACTION_LABEL: Record<PoiDetailAction, string> = {
   // browser overlay is up. (Tracked for next session.)
   safari: 'Open on Phone',
   'read-more': 'Read More',
+  // 'close' dismisses the action menu and returns to the POI detail view.
+  // 'back' exits the detail entirely and returns to the POI list.
+  close: '← Back',
   back: 'Back to List',
 }
 
@@ -504,7 +492,7 @@ function navBodyText(screen: Extract<Screen, { name: 'NAV_ACTIVE' }>): string {
       '',
       truncate(screen.destination.name, NAV_BODY_CHARS_PER_LINE),
       '',
-      '> Tap to return',
+      '> 2× to go back',
     ].join('\n')
   }
 
@@ -544,9 +532,9 @@ function navBodyText(screen: Extract<Screen, { name: 'NAV_ACTIVE' }>): string {
     lines.push(`then ${truncate(nextStep.instruction, NAV_BODY_CHARS_PER_LINE - 5)}`)
   }
 
-  // Single hint line saves two rows vs the previous two-liner + blank gap.
-  // "2×" is shorter than "Double-tap" and still clear on a glance.
-  lines.push('', NAV_RULE, '> Tap stop  ·  2×→list')
+  // "Tap re-route" = get fresh directions from current position.
+  // "2×→detail" = double-tap returns to the POI detail view.
+  lines.push('', NAV_RULE, '> Tap re-route  ·  2×→detail')
   return lines.join('\n')
 }
 

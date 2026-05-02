@@ -49,19 +49,18 @@ const BACKGROUND_REFRESH_MS = 5 * 60 * 1000
 const SCROLL_COOLDOWN_MS = 100
 let _lastScrollAt = 0
 
-// Phase F/H (2026-04-26/27): manual multi-tap exit detector.
+// Phase F/H (2026-04-26/27): manual multi-tap back detector.
 //
 // The SDK's native DOUBLE_CLICK_EVENT doesn't fire reliably on real BLE —
 // field tests 2026-04-24 and 2026-04-25 both showed it unresponsive.
 // Phase F introduced a fallback: two CLICK_EVENTs within the window are
-// promoted to `request-exit`. Phase H extends this to count-based
+// promoted to a `back` event. Phase H extends this to count-based
 // detection (fires at >= 2 taps) so a user who triple-taps to be sure
-// still triggers exit even if the SDK debounces one click per gesture.
+// still triggers back even if the SDK debounces one click per gesture.
 //
-// Sequence on a detected exit tap:
-//   - The first tap's `tap` effect still fires immediately (the reducer
-//     handles the resulting state change; `request-exit` then surfaces
-//     CONFIRM_EXIT on top of it).
+// v1.2: on the 2nd tap, `tap` is suppressed — only `back` is dispatched.
+// This prevents accidentally executing an action (e.g. opening POI_ACTIONS)
+// while the user is trying to go back. The 1st tap's action still fires.
 //   - `_clickCount` resets to 0 so the next tap starts a fresh sequence.
 const MANUAL_EXIT_TAP_WINDOW_MS = 350
 let _clickCount = 0
@@ -76,7 +75,7 @@ export function _resetBridgeEventState(): void {
 
 /**
  * Returns true when this CLICK is the 2nd (or later) tap within the
- * manual exit-tap window — i.e. the user is signalling "I want to exit."
+ * manual back-tap window — i.e. the user is signalling "go back."
  *
  * Fires on count >= 2 (not exactly 2) so a triple-tap still works when
  * the SDK debounces one of the clicks in a quick double-tap gesture.
@@ -122,7 +121,7 @@ export async function initGlasses(): Promise<void> {
   const runner = new EffectRunner({
     dispatch: (event) => dispatch(event),
     getSettings: () => state.settings,
-    exitApp: () => void bridge.shutDownPageContainer(0),
+    exitApp: () => void bridge.shutDownPageContainer(1),
     // Phase G (2026-04-26): speculative attempt to escape the EvenHub
     // in-app browser overlay (which captures glasses input). The SDK's
     // public method enum doesn't list a URL-opening method, but
@@ -298,9 +297,9 @@ export function translateGlassesEvent(
   evt: EvenHubEvent,
   state: AppState,
   dispatch: (e: Event) => void,
-  // Kept in the signature for callers/tests; the bridge no longer needs
-  // to call shutDownPageContainer directly (exit flows through the
-  // CONFIRM_EXIT screen + 'exit-app' effect now).
+  // Kept in the signature for test compatibility — callers may pass the
+  // bridge but translateGlassesEvent no longer calls it directly. Exit
+  // flows through the 'back' event → 'exit-app' effect → exitApp dep.
   _bridge?: Pick<EvenAppBridge, 'shutDownPageContainer'>,
 ): void {
   // Phase 0 diagnostic — captures source (list/text/sys), eventType, and
@@ -337,11 +336,19 @@ export function translateGlassesEvent(
     const e = evt.listEvent
     const type = normalizeEventType(e.eventType)
     switch (type) {
-      case OsEventTypeList.CLICK_EVENT:
-        dispatch({ type: 'tap', itemIndex: e.currentSelectItemIndex })
-        // Phase F/H: 2nd+ tap within the window promotes to exit.
-        if (isManualExitTap()) dispatch({ type: 'request-exit' })
+      case OsEventTypeList.CLICK_EVENT: {
+        // Phase v1.2: 2nd rapid tap dispatches `back` instead of `tap`.
+        // Suppressing `tap` on the second click prevents accidentally
+        // executing a POI action while backing out. The first tap's
+        // action (e.g. opening POI_ACTIONS) still fires normally.
+        const isBack = isManualExitTap()
+        if (isBack) {
+          dispatch({ type: 'back' })
+        } else {
+          dispatch({ type: 'tap', itemIndex: e.currentSelectItemIndex })
+        }
         return
+      }
       case OsEventTypeList.SCROLL_TOP_EVENT:
         if (scrollOnCooldown()) return
         dispatch({ type: 'cursor-up' })
@@ -351,10 +358,10 @@ export function translateGlassesEvent(
         dispatch({ type: 'cursor-down' })
         return
       case OsEventTypeList.DOUBLE_CLICK_EVENT:
-        // Double-tap from any screen surfaces the exit-confirmation
-        // prompt. The reducer gates `request-exit` so repeated
-        // double-taps while already on CONFIRM_EXIT don't stack.
-        dispatch({ type: 'request-exit' })
+        // Double-tap = go back to the previous screen. At top-level
+        // screens the reducer emits an `exit-app` effect which calls
+        // shutDownPageContainer(1) (EvenHub's native exit dialog).
+        dispatch({ type: 'back' })
         return
     }
     // Fall through — listEvent present but no recognized type.
@@ -368,11 +375,18 @@ export function translateGlassesEvent(
 
   const type = normalizeEventType(e.eventType)
   switch (type) {
-    case OsEventTypeList.CLICK_EVENT:
-      dispatch({ type: 'tap' })
-      // Phase F/H: manual multi-tap exit fallback (see isManualExitTap).
-      if (isManualExitTap()) dispatch({ type: 'request-exit' })
+    case OsEventTypeList.CLICK_EVENT: {
+      // Phase v1.2: same pattern as the list handler above — 2nd rapid
+      // tap dispatches `back` only (tap suppressed) so no unintended
+      // action fires while the user is trying to go back.
+      const isBack = isManualExitTap()
+      if (isBack) {
+        dispatch({ type: 'back' })
+      } else {
+        dispatch({ type: 'tap' })
+      }
       return
+    }
 
     case OsEventTypeList.SCROLL_TOP_EVENT:
       if (scrollOnCooldown()) return
@@ -385,10 +399,9 @@ export function translateGlassesEvent(
       return
 
     case OsEventTypeList.DOUBLE_CLICK_EVENT:
-      // Unified: double-tap always surfaces the exit-confirmation
-      // prompt, regardless of screen. HANDOFF §A3 — the prior
-      // top-level-vs-inner branching was confusing on real hardware.
-      dispatch({ type: 'request-exit' })
+      // Double-tap = back. Unified across all screens — the reducer
+      // decides whether "back" means prev screen or exit-app.
+      dispatch({ type: 'back' })
       return
   }
 }

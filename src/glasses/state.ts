@@ -82,7 +82,6 @@ export type Event =
   | { type: 'back' }
   | { type: 'cursor-up' }
   | { type: 'cursor-down' }
-  | { type: 'request-exit' } // bridge dispatches on double-tap from top-level
   // POI_LIST sentinel actions (Phase 4d)
   | { type: 'load-more' }
   | { type: 'refresh-pois' }
@@ -192,16 +191,7 @@ export function reduce(state: AppState, event: Event): ReducerResult {
 
     case 'cursor-down':
       return onCursorMove(state, +1)
-
-    case 'request-exit':
-      return onRequestExit(state)
   }
-}
-
-function onRequestExit(state: AppState): ReducerResult {
-  // Don't stack confirms.
-  if (state.screen.name === 'CONFIRM_EXIT') return noop(state)
-  return next(state, { name: 'CONFIRM_EXIT', returnTo: state.screen, cursorIndex: 0 })
 }
 
 // ─── Per-event handlers ────────────────────────────────────────────────
@@ -310,22 +300,28 @@ function onRefreshPois(state: AppState): ReducerResult {
 }
 
 function onRouteLoaded(state: AppState, route: Route): ReducerResult {
-  // Route fetches only originate from the POI_ACTIONS screen (the
-  // "Navigate" action). If the user has navigated away before the
-  // response lands, drop it on the floor.
-  if (state.screen.name !== 'POI_ACTIONS') return noop(state)
-  return next(
-    state,
-    {
-      name: 'NAV_ACTIVE',
-      destination: state.screen.poi,
-      route,
-      currentStepIndex: 0,
-      position: state.position,
-      arrived: false,
-    },
-    [{ type: 'start-nav-watch' }],
-  )
+  if (state.screen.name === 'POI_ACTIONS') {
+    // Initial navigation: enter NAV_ACTIVE and start the GPS watch.
+    return next(
+      state,
+      {
+        name: 'NAV_ACTIVE',
+        destination: state.screen.poi,
+        route,
+        currentStepIndex: 0,
+        position: state.position,
+        arrived: false,
+      },
+      [{ type: 'start-nav-watch' }],
+    )
+  }
+  if (state.screen.name === 'NAV_ACTIVE') {
+    // Re-route (tap in NAV_ACTIVE): update the route in-place without
+    // restarting the GPS watch — it's already running.
+    return next(state, { ...state.screen, route, currentStepIndex: 0, arrived: false })
+  }
+  // User navigated away before the route landed — drop it.
+  return noop(state)
 }
 
 function onWikiLoaded(state: AppState, article: WikiArticle): ReducerResult {
@@ -453,19 +449,18 @@ function onTap(state: AppState, itemIndex?: number): ReducerResult {
       return next(state, { name: 'POI_DETAIL', poi: state.screen.fromPoi })
 
     case 'NAV_ACTIVE':
-      // Tap stops navigation, returns to POI_DETAIL.
-      return next(
-        state,
-        { name: 'POI_DETAIL', poi: state.screen.destination },
-        [{ type: 'stop-nav-watch' }],
-      )
-
-    case 'CONFIRM_EXIT':
-      // cursor 0 = "No, keep exploring", cursor 1 = "Yes, exit"
-      if (state.screen.cursorIndex === 1) {
-        return { state, effects: [{ type: 'exit-app' }] }
+      // Tap re-routes from current GPS position — useful when the user
+      // has made a wrong turn and needs fresh directions. The GPS watch
+      // keeps running; onRouteLoaded updates the route in-place.
+      if (!state.position) {
+        return next(state, { name: 'ERROR_LOCATION', message: 'Need GPS to reroute' }, [
+          { type: 'stop-nav-watch' },
+        ])
       }
-      return next(state, state.screen.returnTo)
+      return {
+        state,
+        effects: [{ type: 'fetch-route', from: state.position, to: state.screen.destination }],
+      }
 
     case 'LOADING':
     case 'ERROR_LOCATION':
@@ -478,32 +473,36 @@ function onTap(state: AppState, itemIndex?: number): ReducerResult {
 function onBack(state: AppState): ReducerResult {
   switch (state.screen.name) {
     case 'POI_ACTIONS':
-      // POI_ACTIONS is a sub-screen of POI_DETAIL; backing out returns
-      // to the detail view rather than all the way to the list.
+      // POI_ACTIONS is a sub-screen of POI_DETAIL; backing out (double-tap)
+      // returns to the detail view rather than all the way to the list.
       return next(state, { name: 'POI_DETAIL', poi: state.screen.poi })
 
     case 'POI_DETAIL':
-    case 'WIKI_READ':
     case 'ERROR_NETWORK':
+      // Back from detail / network error → POI_LIST (applying any pending refresh).
       return applyPendingRefresh(state)
 
-    case 'NAV_ACTIVE':
-      return {
-        ...applyPendingRefresh(state),
-        effects: [{ type: 'stop-nav-watch' }],
-      }
+    case 'WIKI_READ':
+      // Back from wiki → POI_DETAIL (not the full list). The user was
+      // reading about a POI; backing out returns them to that POI's detail.
+      return next(state, { name: 'POI_DETAIL', poi: state.screen.fromPoi })
 
-    case 'CONFIRM_EXIT':
-      // Back from confirm = "No" — go back to where we came from.
-      return next(state, state.screen.returnTo)
+    case 'NAV_ACTIVE':
+      // Back from navigation → POI_DETAIL. Route is implicitly discarded
+      // by leaving NAV_ACTIVE; a fresh tap on "Navigate" will re-fetch it.
+      return next(
+        state,
+        { name: 'POI_DETAIL', poi: state.screen.destination },
+        [{ type: 'stop-nav-watch' }],
+      )
 
     case 'POI_LIST':
     case 'LOADING':
     case 'ERROR_LOCATION':
     case 'ERROR_EMPTY':
-      // Top-level — bridge routes back/double-tap through `request-exit`
-      // to surface the confirm-exit prompt instead.
-      return noop(state)
+      // Top-level — nowhere to go back to, so exit the app.
+      // shutDownPageContainer(1) shows EvenHub's native confirmation dialog.
+      return { state, effects: [{ type: 'exit-app' }] }
   }
 }
 
@@ -540,11 +539,6 @@ function onCursorMove(state: AppState, delta: number): ReducerResult {
     if (nextIndex === state.screen.pageIndex) return noop(state)
     return next(state, { ...state.screen, pageIndex: nextIndex })
   }
-  if (state.screen.name === 'CONFIRM_EXIT') {
-    const nextIndex = clamp(state.screen.cursorIndex + delta, 0, 1)
-    if (nextIndex === state.screen.cursorIndex) return noop(state)
-    return next(state, { ...state.screen, cursorIndex: nextIndex })
-  }
   return noop(state)
 }
 
@@ -575,6 +569,9 @@ function executePoiDetailAction(
         state,
         effects: [{ type: 'fetch-wiki', title: poi.wikiTitle, lang: state.settings.lang }],
       }
+    case 'close':
+      // Dismiss the action menu and return to the POI detail view.
+      return next(state, { name: 'POI_DETAIL', poi })
     case 'back':
       return applyPendingRefresh(state)
   }
@@ -590,6 +587,9 @@ function actionsForPoi(poi: Poi): PoiDetailAction[] {
   const actions: PoiDetailAction[] = ['navigate']
   if (poi.websiteUrl) actions.push('safari')
   if (poi.wikiTitle) actions.push('read-more')
+  // 'close' dismisses the action menu and returns to POI_DETAIL.
+  // 'back' goes all the way back to POI_LIST.
+  actions.push('close')
   actions.push('back')
   return actions
 }

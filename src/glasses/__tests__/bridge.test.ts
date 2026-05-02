@@ -94,7 +94,7 @@ describe('translateGlassesEvent — listEvent', () => {
     expect(dispatch).toHaveBeenNthCalledWith(2, { type: 'cursor-down' })
   })
 
-  it('DOUBLE_CLICK on the list dispatches request-exit (confirmation prompt)', () => {
+  it('DOUBLE_CLICK on the list dispatches back (go to previous screen / exit)', () => {
     const dispatch = vi.fn<(e: Event) => void>()
     const bridge = makeBridge()
     translateGlassesEvent(
@@ -103,7 +103,7 @@ describe('translateGlassesEvent — listEvent', () => {
       dispatch,
       bridge,
     )
-    expect(dispatch).toHaveBeenCalledWith({ type: 'request-exit' })
+    expect(dispatch).toHaveBeenCalledWith({ type: 'back' })
     expect(bridge.shutDownPageContainer).not.toHaveBeenCalled()
   })
 })
@@ -139,7 +139,7 @@ describe('translateGlassesEvent — text/sys events', () => {
     expect(dispatch).toHaveBeenNthCalledWith(2, { type: 'cursor-down' })
   })
 
-  it('DOUBLE_CLICK on POI_DETAIL now dispatches request-exit (unified flow)', () => {
+  it('DOUBLE_CLICK on POI_DETAIL dispatches back (unified: prev screen)', () => {
     const dispatch = vi.fn<(e: Event) => void>()
     const bridge = makeBridge()
     translateGlassesEvent(
@@ -148,11 +148,11 @@ describe('translateGlassesEvent — text/sys events', () => {
       dispatch,
       bridge,
     )
-    expect(dispatch).toHaveBeenCalledWith({ type: 'request-exit' })
+    expect(dispatch).toHaveBeenCalledWith({ type: 'back' })
     expect(bridge.shutDownPageContainer).not.toHaveBeenCalled()
   })
 
-  it('DOUBLE_CLICK on a top-level screen surfaces the exit prompt', () => {
+  it('DOUBLE_CLICK on a top-level screen dispatches back (reducer triggers exit)', () => {
     const dispatch = vi.fn<(e: Event) => void>()
     const bridge = makeBridge()
     translateGlassesEvent(
@@ -161,7 +161,7 @@ describe('translateGlassesEvent — text/sys events', () => {
       dispatch,
       bridge,
     )
-    expect(dispatch).toHaveBeenCalledWith({ type: 'request-exit' })
+    expect(dispatch).toHaveBeenCalledWith({ type: 'back' })
     expect(bridge.shutDownPageContainer).not.toHaveBeenCalled()
   })
 
@@ -247,7 +247,7 @@ describe('translateGlassesEvent — Phase 1 fixes', () => {
     expect(dispatch).toHaveBeenCalledWith({ type: 'cursor-up' })
   })
 
-  it('DOUBLE_CLICK on NAV_ACTIVE surfaces exit prompt (unified)', () => {
+  it('DOUBLE_CLICK on NAV_ACTIVE dispatches back (returns to POI_DETAIL)', () => {
     const dispatch = vi.fn<(e: Event) => void>()
     translateGlassesEvent(
       textEvt(OsEventTypeList.DOUBLE_CLICK_EVENT),
@@ -267,10 +267,10 @@ describe('translateGlassesEvent — Phase 1 fixes', () => {
       dispatch,
       makeBridge(),
     )
-    expect(dispatch).toHaveBeenCalledWith({ type: 'request-exit' })
+    expect(dispatch).toHaveBeenCalledWith({ type: 'back' })
   })
 
-  it('DOUBLE_CLICK on WIKI_READ surfaces exit prompt (unified)', () => {
+  it('DOUBLE_CLICK on WIKI_READ dispatches back (returns to POI_DETAIL)', () => {
     const dispatch = vi.fn<(e: Event) => void>()
     translateGlassesEvent(
       textEvt(OsEventTypeList.DOUBLE_CLICK_EVENT),
@@ -286,7 +286,7 @@ describe('translateGlassesEvent — Phase 1 fixes', () => {
       dispatch,
       makeBridge(),
     )
-    expect(dispatch).toHaveBeenCalledWith({ type: 'request-exit' })
+    expect(dispatch).toHaveBeenCalledWith({ type: 'back' })
   })
 
   it('listEvent with unknown type falls through to textEvent when present', () => {
@@ -306,12 +306,13 @@ describe('translateGlassesEvent — Phase 1 fixes', () => {
   })
 })
 
-// Phase F/H manual multi-tap exit detector (2026-04-26/27)
+// Phase F/H → v1.2 manual multi-tap back detector (2026-04-26/27 → 2026-05-02)
 // The SDK's DOUBLE_CLICK_EVENT is unreliable on real BLE. We fall back
-// to counting raw CLICK_EVENTs within a 350ms window. Fires on count >= 2
-// so a triple-tap gesture works even when the SDK debounces one click.
-describe('manual exit-tap detector', () => {
-  it('single click dispatches tap only (no request-exit)', () => {
+// to counting raw CLICK_EVENTs within a 350ms window. On the 2nd tap,
+// `tap` is suppressed and only `back` is dispatched to prevent accidentally
+// executing an action while backing out.
+describe('manual back-tap detector', () => {
+  it('single click dispatches tap only (no back)', () => {
     const dispatch = vi.fn<(e: Event) => void>()
     translateGlassesEvent(
       textEvt(OsEventTypeList.CLICK_EVENT),
@@ -323,7 +324,7 @@ describe('manual exit-tap detector', () => {
     expect(dispatch).toHaveBeenCalledWith({ type: 'tap' })
   })
 
-  it('two rapid clicks on a text screen dispatch tap then tap+request-exit', () => {
+  it('two rapid clicks on a text screen: click 1 → tap, click 2 → back only (tap suppressed)', () => {
     const dispatch = vi.fn<(e: Event) => void>()
     // Click 1
     translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
@@ -332,51 +333,47 @@ describe('manual exit-tap detector', () => {
 
     // Call 1: tap (click 1)
     expect(dispatch).toHaveBeenNthCalledWith(1, { type: 'tap' })
-    // Call 2: tap (click 2, before exit check)
-    expect(dispatch).toHaveBeenNthCalledWith(2, { type: 'tap' })
-    // Call 3: request-exit (exit tap detected on click 2)
-    expect(dispatch).toHaveBeenNthCalledWith(3, { type: 'request-exit' })
-    expect(dispatch).toHaveBeenCalledTimes(3)
+    // Call 2: back only (click 2 — tap is suppressed)
+    expect(dispatch).toHaveBeenNthCalledWith(2, { type: 'back' })
+    expect(dispatch).toHaveBeenCalledTimes(2)
   })
 
-  it('two rapid clicks on a list screen dispatch tap+itemIndex then request-exit', () => {
+  it('two rapid clicks on a list screen: click 1 → tap+itemIndex, click 2 → back only', () => {
     const dispatch = vi.fn<(e: Event) => void>()
     translateGlassesEvent(listEvt(OsEventTypeList.CLICK_EVENT, 1), poiListState(), dispatch, makeBridge())
     translateGlassesEvent(listEvt(OsEventTypeList.CLICK_EVENT, 1), poiListState(), dispatch, makeBridge())
 
     expect(dispatch).toHaveBeenNthCalledWith(1, { type: 'tap', itemIndex: 1 })
-    expect(dispatch).toHaveBeenNthCalledWith(2, { type: 'tap', itemIndex: 1 })
-    expect(dispatch).toHaveBeenNthCalledWith(3, { type: 'request-exit' })
-    expect(dispatch).toHaveBeenCalledTimes(3)
+    expect(dispatch).toHaveBeenNthCalledWith(2, { type: 'back' })
+    expect(dispatch).toHaveBeenCalledTimes(2)
   })
 
-  it('triple-tap fires request-exit on the 2nd click (resilient to debounced 3rd)', () => {
-    // Simulates a user who triple-taps but the SDK delivers all 3.
-    // request-exit fires on click 2; click 3 starts a fresh sequence.
+  it('triple-tap: back fires on the 2nd click; 3rd click starts fresh as tap', () => {
+    // Simulates a user who triple-taps.
+    // back fires on click 2; click 3 starts a fresh sequence.
     const dispatch = vi.fn<(e: Event) => void>()
     translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
     translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
     translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
 
-    // Calls: tap, tap, request-exit (click 2), tap (click 3 starts fresh)
+    // Calls: tap (click 1), back (click 2, tap suppressed), tap (click 3 starts fresh)
     const calls = dispatch.mock.calls.map((c) => c[0])
-    expect(calls.filter((c) => (c as Event).type === 'request-exit')).toHaveLength(1)
-    expect(calls.filter((c) => (c as Event).type === 'tap')).toHaveLength(3)
+    expect(calls.filter((c) => (c as Event).type === 'back')).toHaveLength(1)
+    expect(calls.filter((c) => (c as Event).type === 'tap')).toHaveLength(2)
   })
 
-  it('triple-tap with SDK debouncing one click: 2 clicks received → still fires', () => {
+  it('triple-tap with SDK debouncing one click: 2 clicks received → still fires back', () => {
     // SDK drops the middle click of a three-tap gesture — we receive 2.
-    // Since 2 >= 2, request-exit still fires. This is the main motivation
-    // for the count-based approach over exactly-2.
+    // Since 2 >= 2, back still fires.
     const dispatch = vi.fn<(e: Event) => void>()
     translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
     translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
 
     const calls = dispatch.mock.calls.map((c) => (c[0] as Event).type)
-    expect(calls).toContain('request-exit')
+    expect(calls).toContain('back')
   })
 
-  it('slow second tap (outside window) resets the sequence — no exit', () => {
+  it('slow second tap (outside window) resets the sequence — no back', () => {
     // We can't control Date.now() directly in node, but _resetBridgeEventState
     // resets _lastClickAt to 0 — simulating an expired window.
     const dispatch = vi.fn<(e: Event) => void>()
@@ -387,21 +384,21 @@ describe('manual exit-tap detector', () => {
 
     // Both clicks are treated as first-taps of their own sequences.
     const calls = dispatch.mock.calls.map((c) => (c[0] as Event).type)
-    expect(calls).not.toContain('request-exit')
+    expect(calls).not.toContain('back')
     expect(calls.every((t) => t === 'tap')).toBe(true)
   })
 
-  it('after a detected exit-tap, the next single click does NOT re-trigger exit', () => {
+  it('after a detected back-tap, the next single click does NOT re-trigger back', () => {
     // _clickCount resets to 0 after firing — the next tap starts fresh.
     const dispatch = vi.fn<(e: Event) => void>()
     translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
     translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
-    // At this point request-exit has fired and count is reset.
+    // At this point back has fired and count is reset.
 
     dispatch.mockClear()
-    // A third tap within the window: count goes from 0 → 1, not >= 2 → no exit.
+    // A third tap within the window: count goes from 0 → 1, not >= 2 → no back.
     translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
     expect(dispatch).toHaveBeenCalledWith({ type: 'tap' })
-    expect(dispatch).not.toHaveBeenCalledWith({ type: 'request-exit' })
+    expect(dispatch).not.toHaveBeenCalledWith({ type: 'back' })
   })
 })

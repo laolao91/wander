@@ -140,7 +140,8 @@ describe('settings change → persist effect → sync-completed', () => {
     expect(reloaded.enabledCategories).toContain('nightlife')
   })
 
-  it('emits persist-settings + broadcast-settings effects', async () => {
+  it('emits persist-settings + broadcast-settings + request-location effects', async () => {
+    // v1.2: settings changes also trigger a Nearby refresh via request-location.
     const kv = createMemoryKVStore()
     const { firstEffects } = await simulateDispatch(
       INITIAL_STATE,
@@ -151,6 +152,7 @@ describe('settings change → persist effect → sync-completed', () => {
     expect(firstEffects.map((e) => e.type)).toEqual([
       'persist-settings',
       'broadcast-settings',
+      'request-location',
     ])
   })
 })

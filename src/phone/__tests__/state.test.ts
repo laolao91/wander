@@ -61,16 +61,19 @@ describe('settings-hydrated', () => {
 // ─── Radius ────────────────────────────────────────────────────────────
 
 describe('radius-changed', () => {
-  it('updates radius, transitions to syncing, emits persist + broadcast', () => {
+  it('updates radius, transitions to syncing, emits persist + broadcast + request-location', () => {
     const result = reduce(INITIAL_STATE, {
       type: 'radius-changed',
       radiusMiles: 1.5,
     })
     expect(result.state.settings.radiusMiles).toBe(1.5)
     expect(result.state.syncStatus).toBe('syncing')
+    // v1.2: settings changes also auto-refresh the Nearby tab.
+    expect(result.state.nearby.fetchStatus).toBe('locating')
     expect(result.effects).toEqual([
       { type: 'persist-settings', settings: result.state.settings },
       { type: 'broadcast-settings', settings: result.state.settings },
+      { type: 'request-location' },
     ])
   })
 
@@ -124,14 +127,17 @@ describe('category-toggled', () => {
     )
   })
 
-  it('emits persist + broadcast effects', () => {
+  it('emits persist + broadcast + request-location effects', () => {
     const result = reduce(INITIAL_STATE, {
       type: 'category-toggled',
       category: 'libraries',
     })
+    // v1.2: settings changes also auto-refresh the Nearby tab.
+    expect(result.state.nearby.fetchStatus).toBe('locating')
     expect(result.effects).toEqual([
       { type: 'persist-settings', settings: result.state.settings },
       { type: 'broadcast-settings', settings: result.state.settings },
+      { type: 'request-location' },
     ])
   })
 

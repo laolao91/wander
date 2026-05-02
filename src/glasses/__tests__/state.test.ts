@@ -194,7 +194,7 @@ describe('tap on POI_DETAIL', () => {
     expect(r.state.screen).toMatchObject({
       name: 'POI_ACTIONS',
       poi: POI_A,
-      actions: ['navigate', 'safari', 'read-more', 'back'],
+      actions: ['navigate', 'safari', 'read-more', 'close', 'back'],
       cursorIndex: 0,
     })
   })
@@ -207,7 +207,7 @@ describe('tap on POI_DETAIL', () => {
     const r = reduce(detail, { type: 'tap' })
     expect(r.state.screen).toMatchObject({
       name: 'POI_ACTIONS',
-      actions: ['navigate', 'back'],
+      actions: ['navigate', 'close', 'back'],
     })
   })
 })
@@ -215,12 +215,13 @@ describe('tap on POI_DETAIL', () => {
 // ─── POI_ACTIONS cursor + actions ──────────────────────────────────────
 
 describe('POI_ACTIONS cursor', () => {
+  // v1.2: actions now include 'close' → ['navigate', 'safari', 'read-more', 'close', 'back']
   const actions: AppState = {
     ...listState(),
     screen: {
       name: 'POI_ACTIONS',
       poi: POI_A,
-      actions: ['navigate', 'safari', 'read-more', 'back'],
+      actions: ['navigate', 'safari', 'read-more', 'close', 'back'],
       cursorIndex: 0,
     },
   }
@@ -233,7 +234,7 @@ describe('POI_ACTIONS cursor', () => {
   it('clamps at the bottom', () => {
     const atBottom = {
       ...actions,
-      screen: { ...actions.screen, cursorIndex: 3 },
+      screen: { ...actions.screen, cursorIndex: 4 }, // 5 items now (0–4)
     } as AppState
     const r = reduce(atBottom, { type: 'cursor-down' })
     expect(r.state).toBe(atBottom)
@@ -297,12 +298,13 @@ describe('WIKI_READ page scroll', () => {
 })
 
 describe('POI_ACTIONS actions', () => {
+  // v1.2: actions = ['navigate', 'safari', 'read-more', 'close', 'back']
   const baseActions: AppState = {
     ...listState(),
     screen: {
       name: 'POI_ACTIONS',
       poi: POI_A,
-      actions: ['navigate', 'safari', 'read-more', 'back'],
+      actions: ['navigate', 'safari', 'read-more', 'close', 'back'],
       cursorIndex: 0,
     },
   }
@@ -347,16 +349,25 @@ describe('POI_ACTIONS actions', () => {
     })
   })
 
-  it('back (action label) returns to POI_LIST', () => {
-    const onBack = {
+  it('close action returns to POI_DETAIL (dismisses action menu)', () => {
+    const onClose = {
       ...baseActions,
       screen: { ...baseActions.screen, cursorIndex: 3 },
+    } as AppState
+    const r = reduce(onClose, { type: 'tap' })
+    expect(r.state.screen).toMatchObject({ name: 'POI_DETAIL', poi: POI_A })
+  })
+
+  it('back action (index 4) returns to POI_LIST', () => {
+    const onBack = {
+      ...baseActions,
+      screen: { ...baseActions.screen, cursorIndex: 4 },
     } as AppState
     const r = reduce(onBack, { type: 'tap' })
     expect(r.state.screen.name).toBe('POI_LIST')
   })
 
-  it('back-event (not the action) returns POI_ACTIONS to POI_DETAIL', () => {
+  it('back-event (double-tap gesture) returns POI_ACTIONS to POI_DETAIL', () => {
     const r = reduce(baseActions, { type: 'back' })
     expect(r.state.screen).toMatchObject({
       name: 'POI_DETAIL',
@@ -410,34 +421,60 @@ describe('route-loaded', () => {
 // ─── NAV_ACTIVE tap stops nav ──────────────────────────────────────────
 
 describe('NAV_ACTIVE', () => {
+  const baseRoute = {
+    totalDistanceMeters: 100,
+    totalDurationSeconds: 60,
+    steps: [],
+    geometry: [] as [number, number][],
+    language: 'en',
+  }
   const navState: AppState = {
     ...listState(),
     screen: {
       name: 'NAV_ACTIVE',
       destination: POI_A,
-      route: {
-        totalDistanceMeters: 100,
-        totalDurationSeconds: 60,
-        steps: [],
-        geometry: [],
-        language: 'en',
-      },
+      route: baseRoute,
       currentStepIndex: 0,
       position: { lat: 40.7128, lng: -74.006 },
       arrived: false,
     },
   }
 
-  it('tap stops nav and returns to POI_DETAIL with stop-nav-watch', () => {
+  it('tap re-routes: emits fetch-route from current position (no screen change)', () => {
     const r = reduce(navState, { type: 'tap' })
-    expect(r.state.screen.name).toBe('POI_DETAIL')
+    // v1.2: tap = reroute, not stop. Screen stays NAV_ACTIVE.
+    expect(r.state.screen.name).toBe('NAV_ACTIVE')
+    expect(r.effects).toContainEqual({
+      type: 'fetch-route',
+      from: { lat: 40.7128, lng: -74.006 },
+      to: POI_A,
+    })
+    expect(r.effects).not.toContainEqual({ type: 'stop-nav-watch' })
+  })
+
+  it('tap with no GPS goes to ERROR_LOCATION and stops the watch', () => {
+    const noPos = { ...navState, position: null } as AppState
+    const r = reduce(noPos, { type: 'tap' })
+    expect(r.state.screen.name).toBe('ERROR_LOCATION')
     expect(r.effects).toContainEqual({ type: 'stop-nav-watch' })
   })
 
-  it('back stops nav and returns to POI_LIST with stop-nav-watch', () => {
+  it('back stops nav and returns to POI_DETAIL with stop-nav-watch', () => {
+    // v1.2: double-tap goes back to POI_DETAIL (not POI_LIST).
     const r = reduce(navState, { type: 'back' })
-    expect(r.state.screen.name).toBe('POI_LIST')
+    expect(r.state.screen).toMatchObject({ name: 'POI_DETAIL', poi: POI_A })
     expect(r.effects).toContainEqual({ type: 'stop-nav-watch' })
+  })
+
+  it('route-loaded while in NAV_ACTIVE updates the route in-place (reroute)', () => {
+    const newRoute = { ...baseRoute, totalDistanceMeters: 200 }
+    const r = reduce(navState, { type: 'route-loaded', route: newRoute })
+    expect(r.state.screen.name).toBe('NAV_ACTIVE')
+    expect(
+      (r.state.screen as Extract<typeof r.state.screen, { name: 'NAV_ACTIVE' }>).route
+        .totalDistanceMeters,
+    ).toBe(200)
+    expect(r.effects).toEqual([]) // no start-nav-watch (already running)
   })
 })
 

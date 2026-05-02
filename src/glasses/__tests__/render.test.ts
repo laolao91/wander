@@ -476,7 +476,7 @@ describe('renderScreen NAV_ACTIVE', () => {
   it('shows "You have arrived!" when arrived is true', () => {
     const body = renderScreen({ ...baseNav, arrived: true }).textObject?.[1].content ?? ''
     expect(body).toContain('You have arrived!')
-    expect(body).toContain('Tap to return')
+    expect(body).toContain('2× to go back')
   })
 
   it('formats long distances in miles', () => {

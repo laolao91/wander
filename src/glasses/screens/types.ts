@@ -20,7 +20,6 @@ export type ScreenName =
   | 'ERROR_LOCATION'
   | 'ERROR_NETWORK'
   | 'ERROR_EMPTY'
-  | 'CONFIRM_EXIT'
 
 /** "What is the glasses display showing?" — the only screen-shaped state. */
 export type Screen =
@@ -33,7 +32,6 @@ export type Screen =
   | ErrorLocationScreen
   | ErrorNetworkScreen
   | ErrorEmptyScreen
-  | ConfirmExitScreen
 
 export interface LoadingScreen {
   name: 'LOADING'
@@ -92,7 +90,7 @@ export interface PoiActionsScreen {
   cursorIndex: number
 }
 
-export type PoiDetailAction = 'navigate' | 'safari' | 'read-more' | 'back'
+export type PoiDetailAction = 'navigate' | 'safari' | 'read-more' | 'close' | 'back'
 
 export interface NavActiveScreen {
   name: 'NAV_ACTIVE'
@@ -130,15 +128,6 @@ export interface ErrorEmptyScreen {
   name: 'ERROR_EMPTY'
   /** True if the user can widen radius / change categories from settings. */
   filtersAreNarrow: boolean
-}
-
-/** Two-button "exit Wander?" prompt shown before shutdown. */
-export interface ConfirmExitScreen {
-  name: 'CONFIRM_EXIT'
-  /** The screen we'd return to if the user picks "No". */
-  returnTo: Screen
-  /** 0 = "No, keep exploring" (default, safer), 1 = "Yes, exit". */
-  cursorIndex: number
 }
 
 // ─── Settings (kept on AppState, surfaced into POI fetches) ────────────
@@ -182,48 +171,37 @@ export const ALLOWED_TRANSITIONS: Record<ScreenName, ReadonlySet<ScreenName>> = 
     'ERROR_LOCATION',
     'ERROR_NETWORK',
     'ERROR_EMPTY',
-    'CONFIRM_EXIT',
   ]),
   POI_LIST: new Set([
     'POI_DETAIL',
     'LOADING', // refresh
     'ERROR_NETWORK',
     'ERROR_EMPTY',
-    'CONFIRM_EXIT',
   ]),
   POI_DETAIL: new Set([
     'POI_ACTIONS', // single-tap opens the action menu
-    'POI_LIST', // back (pending-refresh applied here)
-    'ERROR_NETWORK', // failure routed back through the detail screen
+    'POI_LIST',    // back (pending-refresh applied here)
+    'ERROR_NETWORK',
   ]),
   POI_ACTIONS: new Set([
-    'POI_DETAIL', // cancelling actions returns to the detail view
-    'POI_LIST', // "Back to List" action (applyPendingRefresh)
-    'NAV_ACTIVE', // navigate action → route-loaded
-    'WIKI_READ', // read-more action → wiki-loaded
+    'POI_DETAIL',    // close action or back-event returns to detail view
+    'POI_LIST',      // "Back to List" action (applyPendingRefresh)
+    'NAV_ACTIVE',    // navigate action → route-loaded
+    'WIKI_READ',     // read-more action → wiki-loaded
     'ERROR_NETWORK', // route/wiki failures
     'ERROR_LOCATION', // navigate tapped without GPS
   ]),
   NAV_ACTIVE: new Set([
-    'POI_DETAIL', // tap to stop
-    'POI_LIST', // double-tap to stop
+    'POI_DETAIL',    // tap re-routes; double-tap returns to detail
     'ERROR_LOCATION', // GPS lost
+    'ERROR_NETWORK', // reroute failed
   ]),
   WIKI_READ: new Set([
-    'POI_DETAIL', // tap or scroll-top from page 0
+    'POI_DETAIL', // tap or double-tap returns to detail
   ]),
-  ERROR_LOCATION: new Set(['LOADING', 'POI_LIST', 'CONFIRM_EXIT']),
+  ERROR_LOCATION: new Set(['LOADING', 'POI_LIST']),
   ERROR_NETWORK: new Set(['LOADING', 'POI_LIST', 'POI_DETAIL']),
-  ERROR_EMPTY: new Set(['LOADING', 'POI_LIST', 'CONFIRM_EXIT']),
-  // CONFIRM_EXIT can return to any top-level screen (returnTo), or the
-  // bridge intercepts "yes" and shuts down the page container before the
-  // reducer ever runs.
-  CONFIRM_EXIT: new Set([
-    'POI_LIST',
-    'LOADING',
-    'ERROR_LOCATION',
-    'ERROR_EMPTY',
-  ]),
+  ERROR_EMPTY: new Set(['LOADING', 'POI_LIST']),
 }
 
 export function canTransition(from: ScreenName, to: ScreenName): boolean {

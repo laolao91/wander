@@ -178,8 +178,11 @@ void withNearby
 
 /**
  * Apply a settings change: update state, mark sync in-flight, and emit
- * persist + broadcast effects. Kept as a helper because radius-changed
- * and category-toggled both take this same path.
+ * persist + broadcast effects. Also triggers a Nearby refresh so the
+ * phone POI list immediately reflects the new radius/categories without
+ * requiring a manual tap on ↺ Refresh.
+ * Kept as a helper because radius-changed and category-toggled both take
+ * this same path.
  */
 function withSettingsChange(
   state: PhoneState,
@@ -191,10 +194,14 @@ function withSettingsChange(
       settings: nextSettings,
       syncStatus: 'syncing',
       syncError: null,
+      // Reset to locating immediately so the Nearby tab shows a spinner
+      // rather than stale results while the fresh fetch is in flight.
+      nearby: { ...state.nearby, fetchStatus: 'locating', errorMessage: null },
     },
     effects: [
       { type: 'persist-settings', settings: nextSettings },
       { type: 'broadcast-settings', settings: nextSettings },
+      { type: 'request-location' },
     ],
   }
 }

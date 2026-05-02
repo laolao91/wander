@@ -312,9 +312,13 @@ describe('nearby events do not disturb Settings state', () => {
     expect(result.state.syncStatus).toBe(INITIAL_STATE.syncStatus)
   })
 
-  it('settings change leaves nearby unchanged', () => {
+  it('settings change triggers a nearby refresh (sets fetchStatus to locating)', () => {
+    // v1.2: changing radius/categories auto-refreshes the Nearby tab.
     const result = reduce(INITIAL_STATE, { type: 'radius-changed', radiusMiles: 1.5 })
-    expect(result.state.nearby).toBe(INITIAL_STATE.nearby)
+    expect(result.state.nearby.fetchStatus).toBe('locating')
+    expect(result.effects).toContainEqual({ type: 'request-location' })
+    // Settings and syncStatus are unaffected by the nearby side-effect.
+    expect(result.state.settings.radiusMiles).toBe(1.5)
   })
 })
 
