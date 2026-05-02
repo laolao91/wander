@@ -13,12 +13,15 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { applyCors } from './_lib/cors.js'
 
 const UA = 'Wander/1.0 (Even Realities G2 companion app; steven.lao30@gmail.com)'
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse'
 const TIMEOUT_MS = 6000
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (applyCors(req, res)) return
+
   const lat = parseFloat(String(req.query.lat ?? ''))
   const lng = parseFloat(String(req.query.lng ?? ''))
 

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { resolveLang } from './_lib/lang.js'
+import { applyCors } from './_lib/cors.js'
 
 /**
  * GET /api/route?fromLat&fromLng&toLat&toLng
@@ -74,6 +75,8 @@ const MANEUVER_MAP: Record<number, string> = {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (applyCors(req, res)) return
+
   const apiKey = process.env.ORS_API_KEY
   if (!apiKey) {
     res.status(500).json({ error: 'Server missing ORS_API_KEY' })

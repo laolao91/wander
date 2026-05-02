@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { resolveLang } from './_lib/lang.js'
+import { applyCors } from './_lib/cors.js'
 
 /**
  * GET /api/poi?lat=&lng=&radius=&categories=&offset=
@@ -123,6 +124,8 @@ type Poi = {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (applyCors(req, res)) return
+
   const lat = parseFloat(req.query.lat as string)
   const lng = parseFloat(req.query.lng as string)
 

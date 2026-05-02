@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-05-02
+
+Fix API calls failing when app is installed via EvenHub (CORS). All four
+API endpoints now return Access-Control-Allow-Origin: * and handle OPTIONS
+preflight. Root cause: prototype/QR mode is same-origin so no CORS needed;
+installed EHPK is cross-origin so headers are required.
+
 ## [1.1.1] - 2026-05-02
 
 Phone companion now shows version number (v1.1.1) above the tab bar.

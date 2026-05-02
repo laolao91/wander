@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { resolveLang } from './_lib/lang.js'
+import { applyCors } from './_lib/cors.js'
 
 /**
  * GET /api/wiki?title=<url-encoded wikipedia page title>
@@ -25,6 +26,8 @@ type SummaryApiResponse = {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (applyCors(req, res)) return
+
   const rawTitle = req.query.title
   const title = typeof rawTitle === 'string' ? rawTitle.trim() : ''
 
