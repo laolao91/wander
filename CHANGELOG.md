@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-01
+
+Street tile minimap: NAV_ACTIVE minimap now renders CARTO dark street
+tiles via new `/api/map` proxy. Route markers projected in Web Mercator
+tile-pixel space so position triangle lands on the correct street.
+Silent fallback to plain-black canvas if tiles fail.
+
 ## [1.0.2] - 2026-04-29
 
 Fix API calls failing in EvenHub WebView (absolute URL in production)

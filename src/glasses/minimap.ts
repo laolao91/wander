@@ -7,7 +7,8 @@
  * Two layers, separated for testability:
  *
  *   - **Pure math** (`fitBounds`, `projectPoint`, `dashSegments`,
- *     `trianglePath`): no DOM, fully unit-tested in Node.
+ *     `trianglePath`, `latLngToTilePx`, `projectInTileSpace`): no DOM,
+ *     fully unit-tested in Node.
  *
  *   - **Canvas drawing** (`drawMinimap`, `encodeMinimapPng`): touches
  *     `OffscreenCanvas` / `HTMLCanvasElement` and `Blob`, so it only
@@ -17,7 +18,20 @@
  * and converts to 4-bit greyscale (the SDK exposes the failure mode as
  * `ImageRawDataUpdateResult.imageToGray4Failed`, which confirms the
  * host owns the gray4 conversion).
+ *
+ * Phase 5 — street tile background:
+ *   `encodeMinimapPng` now attempts to load CARTO dark_nolabels tiles
+ *   through `/api/map` before drawing. When tiles load, the route
+ *   overlay is projected using Web Mercator tile pixel math so markers
+ *   land on the correct streets. If tiles fail (offline, timeout, etc.)
+ *   the existing black-background + fitBounds fallback is used unchanged.
  */
+
+// In production (EHPK or Vercel-hosted), use the absolute URL just like
+// api.ts does (same WebKit relative-URL restriction applies here).
+const TILE_API_BASE = import.meta.env.DEV
+  ? '/api/map'
+  : 'https://wander-six-phi.vercel.app/api/map'
 
 // ─── Public dimensions (matches render.ts NAV_ACTIVE layout) ───────────
 
@@ -371,49 +385,248 @@ export function bearingBetween(a: LatLng, b: LatLng): number {
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360
 }
 
+// ─── Web Mercator tile math (pure, testable) ───────────────────────────
+
+/**
+ * Convert lat/lng to global Web Mercator pixel coordinates at the given
+ * zoom level. Pixel (0, 0) is the top-left corner of tile (0, 0).
+ *
+ * Standard slippy-map formula: tile size = 256 px, 2^z tiles per axis.
+ * Exported for unit tests — pure math, no DOM.
+ */
+export function latLngToTilePx(
+  lat: number,
+  lng: number,
+  zoom: number,
+): { px: number; py: number } {
+  const n = Math.pow(2, zoom)
+  const tileX = ((lng + 180) / 360) * n
+  const latRad = (lat * Math.PI) / 180
+  const tileY =
+    ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n
+  return { px: tileX * 256, py: tileY * 256 }
+}
+
+/**
+ * Project a lat/lng to canvas pixel coordinates using the same Web
+ * Mercator origin as the loaded tile layer. When tiles are present, all
+ * route markers use this instead of `projectPoint` so they land on the
+ * correct streets.
+ *
+ * Exported for unit tests — pure math, no DOM.
+ */
+export function projectInTileSpace(
+  lat: number,
+  lng: number,
+  zoom: number,
+  originPxX: number,
+  originPxY: number,
+): CanvasPoint {
+  const { px, py } = latLngToTilePx(lat, lng, zoom)
+  return { x: px - originPxX, y: py - originPxY }
+}
+
+// ─── Tile layer (browser only) ─────────────────────────────────────────
+
+/**
+ * A set of pre-loaded map tile images positioned so they tile correctly
+ * across the canvas. Returned by `loadTileLayer` and consumed by
+ * `drawMinimap`.
+ */
+export interface TileLayer {
+  /** Pre-loaded images with their canvas draw coordinates (top-left). */
+  tiles: Array<{ img: HTMLImageElement; drawX: number; drawY: number }>
+  /** Zoom level — needed to project lat/lng into canvas coords. */
+  zoom: number
+  /** Canvas top-left corner in global Web Mercator pixel space. */
+  originPxX: number
+  originPxY: number
+}
+
+/**
+ * Load a single tile through the Wander tile proxy (`/api/map`).
+ * Returns an HTMLImageElement ready to draw. Rejects on timeout (5 s)
+ * or HTTP error.
+ *
+ * Uses `crossOrigin = 'anonymous'` so the receiving canvas stays
+ * untainted and `toBlob()` keeps working after `drawImage()`.
+ */
+async function loadTileImage(
+  z: number,
+  x: number,
+  y: number,
+): Promise<HTMLImageElement> {
+  const n = Math.pow(2, z)
+  // Wrap x for tiles that cross the antimeridian.
+  x = ((x % n) + n) % n
+  const url = `${TILE_API_BASE}?z=${z}&x=${x}&y=${y}`
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error(`tile load failed: ${z}/${x}/${y}`))
+    img.src = url
+    // Belt-and-braces: Image.onload can hang forever if the network
+    // stalls after headers arrive. Five seconds is generous for a tile
+    // that's ≤ 30 KB on a local/LAN connection.
+    setTimeout(() => reject(new Error('tile load timeout')), 5000)
+  })
+}
+
+/**
+ * Determine which tiles cover the minimap canvas, fetch them in
+ * parallel through the proxy, and return a `TileLayer` ready for
+ * `drawMinimap`.
+ *
+ * Center strategy:
+ *   - User's current GPS position when available (shows the immediate
+ *     surroundings the user is standing in — best for navigation).
+ *   - First route geometry point as fallback (shows the departure area
+ *     before GPS settles).
+ *   - Destination as last resort.
+ *
+ * Zoom strategy:
+ *   - Zoom 17 when the user is very close to the destination (≤ 60 %
+ *     of canvas width in tile-pixel space at z17 ≈ < 670 m) — high
+ *     street detail for the final approach.
+ *   - Zoom 16 otherwise — shows ~1 km of context, good for mid-route
+ *     walking.
+ *
+ * Returns `null` on any failure so callers can fall back to the
+ * plain-black background path.
+ */
+async function loadTileLayer(
+  input: MinimapInput,
+  canvasW: number,
+  canvasH: number,
+): Promise<TileLayer | null> {
+  // Center point.
+  const centerLat =
+    input.position?.lat ?? input.geometry[0]?.[0] ?? input.destination.lat
+  const centerLng =
+    input.position?.lng ?? input.geometry[0]?.[1] ?? input.destination.lng
+
+  // Zoom selection: z17 when destination is very close, z16 otherwise.
+  let zoom = 16
+  if (input.position) {
+    const p = latLngToTilePx(input.position.lat, input.position.lng, 17)
+    const d = latLngToTilePx(input.destination.lat, input.destination.lng, 17)
+    const distPx = Math.hypot(d.px - p.px, d.py - p.py)
+    if (distPx < canvasW * 0.6) zoom = 17
+  }
+
+  // Canvas origin in global tile-pixel space.
+  const center = latLngToTilePx(centerLat, centerLng, zoom)
+  const originPxX = center.px - canvasW / 2
+  const originPxY = center.py - canvasH / 2
+
+  // Which tiles are needed to fill the canvas?
+  const tx0 = Math.floor(originPxX / 256)
+  const tx1 = Math.floor((originPxX + canvasW - 1) / 256)
+  const ty0 = Math.floor(originPxY / 256)
+  const ty1 = Math.floor((originPxY + canvasH - 1) / 256)
+
+  // Sanity cap — should be at most 2×2=4 tiles for a 240×120 canvas.
+  if ((tx1 - tx0 + 1) * (ty1 - ty0 + 1) > 9) return null
+
+  const fetches: Promise<{
+    img: HTMLImageElement
+    drawX: number
+    drawY: number
+  } | null>[] = []
+
+  for (let tx = tx0; tx <= tx1; tx++) {
+    for (let ty = ty0; ty <= ty1; ty++) {
+      const drawX = Math.round(tx * 256 - originPxX)
+      const drawY = Math.round(ty * 256 - originPxY)
+      fetches.push(
+        loadTileImage(zoom, tx, ty)
+          .then((img) => ({ img, drawX, drawY }))
+          .catch(() => null),
+      )
+    }
+  }
+
+  const results = await Promise.all(fetches)
+  const tiles = results.filter(
+    (t): t is { img: HTMLImageElement; drawX: number; drawY: number } =>
+      t !== null,
+  )
+
+  return tiles.length > 0 ? { tiles, zoom, originPxX, originPxY } : null
+}
+
 // ─── Canvas drawing (browser only) ─────────────────────────────────────
 
 /**
- * Draw the minimap onto a canvas context. Caller owns the canvas (and
- * its lifecycle); this function just paints. Black background, white
- * route + markers — the host converts to gray4 either way, but the
- * monochrome+high-contrast input gives the cleanest result.
+ * Draw the minimap onto a canvas context.
+ *
+ * When `tileLayer` is supplied (Phase 5):
+ *   - Draws the CARTO dark tile images as the background (dark bg,
+ *     grey streets — converts well to gray4).
+ *   - Projects route markers using Web Mercator pixel math so they
+ *     land on the correct streets.
+ *   - Cardinal reference drawn on top of tiles.
+ *
+ * When `tileLayer` is absent or null (fallback / tests):
+ *   - Black background + fitBounds projection — same behaviour as
+ *     Phase 4. All existing tests use this path unchanged.
  */
 export function drawMinimap(
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   input: MinimapInput,
   canvasWidth = MINIMAP_WIDTH,
   canvasHeight = MINIMAP_HEIGHT,
+  tileLayer?: TileLayer | null,
 ): void {
-  // Background.
-  ctx.fillStyle = '#000'
-  ctx.fillRect(0, 0, canvasWidth, canvasHeight)
-
-  // Cardinal reference overlay — drawn first so the route + markers sit
-  // on top. Bug H / Phase 4b. Works even when there's no route data yet
-  // (user sees orientation even on an empty bounds state).
-  drawCardinalReference(ctx, canvasWidth, canvasHeight)
-
   const geom = geometryAsLatLng(input.geometry)
-  // Always include destination + position in the bbox so they're visible.
-  const allPoints: LatLng[] = [...geom, input.destination]
-  if (input.position) allPoints.push(input.position)
 
-  const bounds = fitBounds(allPoints)
-  if (!bounds) {
-    // No data yet — leave the black canvas. The text body still tells
-    // the user what's happening.
-    return
+  let projectedRoute: CanvasPoint[]
+  let dest: CanvasPoint
+  let userPos: CanvasPoint | null
+
+  if (tileLayer && tileLayer.tiles.length > 0) {
+    // ── Tile background path ──────────────────────────────────────────
+    // Draw tile images first (they form the background).
+    for (const { img, drawX, drawY } of tileLayer.tiles) {
+      ctx.drawImage(img, drawX, drawY)
+    }
+
+    // Cardinal reference on top of tiles (dim so it doesn't compete
+    // with the street network, but still orients the user).
+    drawCardinalReference(ctx, canvasWidth, canvasHeight)
+
+    // Project all markers using tile pixel math for street accuracy.
+    const { zoom, originPxX, originPxY } = tileLayer
+    const projectTile = (p: LatLng): CanvasPoint =>
+      projectInTileSpace(p.lat, p.lng, zoom, originPxX, originPxY)
+
+    projectedRoute = geom.map(projectTile)
+    dest = projectTile(input.destination)
+    userPos = input.position ? projectTile(input.position) : null
+  } else {
+    // ── Fallback: black canvas + fitBounds (Phase 4 behaviour) ───────
+    ctx.fillStyle = '#000'
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight)
+
+    drawCardinalReference(ctx, canvasWidth, canvasHeight)
+
+    const allPoints: LatLng[] = [...geom, input.destination]
+    if (input.position) allPoints.push(input.position)
+
+    const bounds = fitBounds(allPoints)
+    if (!bounds) return
+
+    const projectFit = (p: LatLng) =>
+      projectPoint(p, bounds, canvasWidth, canvasHeight)
+    projectedRoute = geom.map(projectFit)
+    dest = projectFit(input.destination)
+    userPos = input.position ? projectFit(input.position) : null
   }
 
-  // Project everything in one pass.
-  const project = (p: LatLng) =>
-    projectPoint(p, bounds, canvasWidth, canvasHeight)
-  const projectedRoute = geom.map(project)
-  const dest = project(input.destination)
-  const userPos = input.position ? project(input.position) : null
-
-  // Route as dashed polyline.
+  // ── Route dashed polyline ─────────────────────────────────────────────
+  // White against the dark tile background stands out strongly after
+  // gray4 conversion (tile streets ≈ gray4 6–9, route ≈ gray4 15).
   ctx.strokeStyle = '#fff'
   ctx.lineWidth = 1.5
   ctx.lineCap = 'round'
@@ -424,23 +637,24 @@ export function drawMinimap(
     ctx.stroke()
   }
 
-  // Destination marker — filled circle with a ring, easy to spot.
+  // ── Destination marker — filled circle with a ring ────────────────────
   ctx.fillStyle = '#fff'
   ctx.beginPath()
   ctx.arc(dest.x, dest.y, 4, 0, Math.PI * 2)
   ctx.fill()
+  ctx.strokeStyle = '#fff'
   ctx.beginPath()
   ctx.arc(dest.x, dest.y, 6, 0, Math.PI * 2)
   ctx.lineWidth = 1
   ctx.stroke()
 
-  // User position triangle.
+  // ── User position triangle ────────────────────────────────────────────
   if (userPos) {
     const heading =
       input.headingDegrees ??
       // Fall back to the direction of the next route point if we have
       // one; otherwise just point north.
-      (projectedRoute.length > 1
+      (geom.length > 1
         ? bearingBetween(input.position!, geom[Math.min(1, geom.length - 1)])
         : 0)
     const tri = trianglePath(userPos, heading, 8)
@@ -458,6 +672,11 @@ export function drawMinimap(
  * Draw + encode the minimap as PNG bytes, ready for
  * `bridge.updateImageRawData({ imageData })`. Resolves to `null` if the
  * canvas API isn't available (SSR, jsdom-less tests).
+ *
+ * Phase 5: attempts to load CARTO dark tiles before drawing so the
+ * minimap shows actual street context. Falls back silently to the
+ * plain-black + fitBounds path on any tile failure (offline, timeout,
+ * CORS issue on unusual WebView builds).
  */
 export async function encodeMinimapPng(
   input: MinimapInput,
@@ -468,7 +687,13 @@ export async function encodeMinimapPng(
   canvas.height = MINIMAP_HEIGHT
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
-  drawMinimap(ctx, input)
+
+  // Attempt to load tile background — non-fatal if it fails.
+  const tileLayer = await loadTileLayer(input, MINIMAP_WIDTH, MINIMAP_HEIGHT).catch(
+    () => null,
+  )
+
+  drawMinimap(ctx, input, MINIMAP_WIDTH, MINIMAP_HEIGHT, tileLayer)
 
   const blob: Blob | null = await new Promise((resolve) =>
     canvas.toBlob((b) => resolve(b), 'image/png'),
