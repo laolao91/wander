@@ -14,6 +14,7 @@ import {
   INITIAL_PHONE_STATE,
   INITIAL_NEARBY_STATE,
   type CategoryId,
+  type NearbyFetchStatus,
   type NearbyState,
   type PhoneEffect,
   type PhoneEvent,
@@ -188,20 +189,34 @@ function withSettingsChange(
   state: PhoneState,
   nextSettings: Settings,
 ): ReduceResult {
+  // If we already have the user's location (acquired on the Nearby tab's
+  // first load), skip GPS re-acquisition and go straight to a POI fetch
+  // with the new settings. This is faster AND more reliable on Android
+  // WebViews where navigator.geolocation can silently fail with
+  // PERMISSION_DENIED even when the user has granted location access.
+  const location = state.nearby.location
+  const nearbyEffect: PhoneEffect = location
+    ? {
+        type: 'fetch-nearby-pois',
+        lat: location.lat,
+        lng: location.lng,
+        settings: nextSettings,
+      }
+    : { type: 'request-location' }
+  const nearbyStatus: NearbyFetchStatus = location ? 'fetching' : 'locating'
+
   return {
     state: {
       ...state,
       settings: nextSettings,
       syncStatus: 'syncing',
       syncError: null,
-      // Reset to locating immediately so the Nearby tab shows a spinner
-      // rather than stale results while the fresh fetch is in flight.
-      nearby: { ...state.nearby, fetchStatus: 'locating', errorMessage: null },
+      nearby: { ...state.nearby, fetchStatus: nearbyStatus, errorMessage: null },
     },
     effects: [
       { type: 'persist-settings', settings: nextSettings },
       { type: 'broadcast-settings', settings: nextSettings },
-      { type: 'request-location' },
+      nearbyEffect,
     ],
   }
 }

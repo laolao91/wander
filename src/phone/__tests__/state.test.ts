@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { INITIAL_STATE, reduce } from '../state'
 import {
   DEFAULT_SETTINGS,
+  INITIAL_NEARBY_STATE,
   type PhoneEvent,
   type PhoneState,
   type Settings,
@@ -187,6 +188,51 @@ describe('sync lifecycle events', () => {
     expect(result.state.syncStatus).toBe('error')
     expect(result.state.syncError).toBe('glasses disconnected')
     expect(result.effects).toEqual([])
+  })
+})
+
+// ─── withSettingsChange — location already known ────────────────────────
+
+describe('withSettingsChange — location already known', () => {
+  const knownLocation = { lat: 40.7851, lng: -73.9637, label: 'Central Park' }
+
+  function stateWithLocation(): PhoneState {
+    return {
+      ...INITIAL_STATE,
+      nearby: {
+        ...INITIAL_NEARBY_STATE,
+        fetchStatus: 'success' as const,
+        location: knownLocation,
+        pois: [],
+        lastFetchTs: Date.now(),
+        errorMessage: null,
+      },
+    }
+  }
+
+  it('radius-changed with known location emits fetch-nearby-pois, not request-location', () => {
+    const state = stateWithLocation()
+    const result = reduce(state, { type: 'radius-changed', radiusMiles: 1.0 })
+    const effectTypes = result.effects.map((e) => e.type)
+    expect(effectTypes).toContain('fetch-nearby-pois')
+    expect(effectTypes).not.toContain('request-location')
+  })
+
+  it('radius-changed with known location sets fetchStatus to fetching', () => {
+    const state = stateWithLocation()
+    const result = reduce(state, { type: 'radius-changed', radiusMiles: 1.0 })
+    expect(result.state.nearby.fetchStatus).toBe('fetching')
+  })
+
+  it('category-toggled with known location emits fetch-nearby-pois with correct coords', () => {
+    const state = stateWithLocation()
+    const result = reduce(state, { type: 'category-toggled', category: 'restaurants' })
+    const fetchEffect = result.effects.find((e) => e.type === 'fetch-nearby-pois')
+    expect(fetchEffect).toMatchObject({
+      type: 'fetch-nearby-pois',
+      lat: knownLocation.lat,
+      lng: knownLocation.lng,
+    })
   })
 })
 
