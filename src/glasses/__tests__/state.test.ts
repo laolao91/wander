@@ -367,12 +367,9 @@ describe('POI_ACTIONS actions', () => {
     expect(r.state.screen.name).toBe('POI_LIST')
   })
 
-  it('back-event (double-tap gesture) returns POI_ACTIONS to POI_DETAIL', () => {
+  it('back-event (double-tap gesture) returns POI_ACTIONS to POI_LIST', () => {
     const r = reduce(baseActions, { type: 'back' })
-    expect(r.state.screen).toMatchObject({
-      name: 'POI_DETAIL',
-      poi: POI_A,
-    })
+    expect(r.state.screen.name).toBe('POI_LIST')
   })
 })
 

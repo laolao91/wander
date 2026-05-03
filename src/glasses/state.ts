@@ -473,9 +473,10 @@ function onTap(state: AppState, itemIndex?: number): ReducerResult {
 function onBack(state: AppState): ReducerResult {
   switch (state.screen.name) {
     case 'POI_ACTIONS':
-      // POI_ACTIONS is a sub-screen of POI_DETAIL; backing out (double-tap)
-      // returns to the detail view rather than all the way to the list.
-      return next(state, { name: 'POI_DETAIL', poi: state.screen.poi })
+      // Back gesture (double-tap) from the options menu goes all the way to
+      // POI_LIST. The '← Back' close action handles intentional "dismiss to
+      // detail" — the gesture always exits further.
+      return applyPendingRefresh(state)
 
     case 'POI_DETAIL':
     case 'ERROR_NETWORK':
