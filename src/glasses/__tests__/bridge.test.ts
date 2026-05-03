@@ -363,6 +363,29 @@ describe('manual back-tap detector — B2 timing regression', () => {
     expect(dispatch).toHaveBeenNthCalledWith(2, { type: 'tap' })
     expect(dispatch).not.toHaveBeenCalledWith({ type: 'back' })
   })
+
+  it('POI_DETAIL → POI_ACTIONS does NOT reset counter (B1 double-tap carries through)', () => {
+    // The double-tap-to-go-back gesture from POI_DETAIL spans the POI_DETAIL →
+    // POI_ACTIONS transition: tap 1 opens the actions menu, tap 2 (rapid) fires
+    // `back` from POI_ACTIONS → POI_LIST. The counter must NOT be reset when
+    // dispatch() transitions POI_DETAIL → POI_ACTIONS, otherwise tap 2 would
+    // execute the first action (navigate) instead of going back.
+    //
+    // We test this at the translateGlassesEvent level by sending two clicks
+    // WITHOUT calling _resetBridgeEventState between them (simulating the
+    // bridge NOT resetting on this specific transition).
+    //
+    // Click 1 → tap (opens POI_ACTIONS). No reset. Click 2 → back.
+    const dispatch = vi.fn<(e: Event) => void>()
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    // Deliberately do NOT call _resetBridgeEventState() here — this mirrors the
+    // bridge.ts behaviour where POI_DETAIL → POI_ACTIONS skips the reset.
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+
+    expect(dispatch).toHaveBeenCalledTimes(2)
+    expect(dispatch).toHaveBeenNthCalledWith(1, { type: 'tap' })
+    expect(dispatch).toHaveBeenNthCalledWith(2, { type: 'back' })
+  })
 })
 
 // Phase F/H → v1.2 manual multi-tap back detector (2026-04-26/27 → 2026-05-02)

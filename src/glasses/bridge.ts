@@ -208,10 +208,17 @@ export async function initGlasses(): Promise<void> {
     state = result.state
 
     if (prev.screen !== state.screen) {
-      // Reset the manual back-tap counter when the screen type changes.
-      // Prevents a tap on one screen from accumulating with a tap on the
-      // newly-rendered screen within the extended 500ms BLE-latency window.
-      if (prev.screen.name !== state.screen.name) {
+      // Reset the manual back-tap counter when the screen type changes,
+      // EXCEPT when going from POI_DETAIL → POI_ACTIONS. The double-tap
+      // gesture to exit POI_DETAIL spans exactly this transition: tap 1
+      // opens the actions menu, tap 2 (within the 500ms window) fires
+      // `back` from POI_ACTIONS → POI_LIST. Resetting here would drop
+      // the accumulated count so tap 2 would execute an action instead
+      // of going back. All other screen-name changes still reset to
+      // prevent cross-screen bounce accumulation (B2 fix).
+      const isDetailToActions =
+        prev.screen.name === 'POI_DETAIL' && state.screen.name === 'POI_ACTIONS'
+      if (prev.screen.name !== state.screen.name && !isDetailToActions) {
         _clickCount = 0
         _lastClickAt = 0
       }
