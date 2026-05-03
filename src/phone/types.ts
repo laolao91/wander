@@ -73,13 +73,13 @@ export function categoryIdsToCategories(ids: readonly CategoryId[]): Category[] 
 // ─── Search radius ────────────────────────────────────────────────────────
 
 /**
- * Search-radius choices in miles. The mockup exposes exactly these 5 as a
+ * Search-radius choices in miles. The mockup exposes exactly these 6 as a
  * slider (no arbitrary values) — keeping them as a union avoids a
  * free-number that later code would have to validate.
  */
-export type RadiusMiles = 0.25 | 0.5 | 0.75 | 1.0 | 1.5
+export type RadiusMiles = 0.25 | 0.5 | 0.75 | 1.0 | 1.5 | 2.0
 
-export const RADIUS_CHOICES: readonly RadiusMiles[] = [0.25, 0.5, 0.75, 1.0, 1.5] as const
+export const RADIUS_CHOICES: readonly RadiusMiles[] = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0] as const
 
 // ─── Settings ─────────────────────────────────────────────────────────────
 

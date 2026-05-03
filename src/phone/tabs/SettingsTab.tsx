@@ -27,6 +27,7 @@ const RADIUS_LABELS: Record<RadiusMiles, string> = {
   0.75: '¾ mi',
   1.0: '1 mi',
   1.5: '1½ mi',
+  2.0: '2 mi',
 }
 
 interface CategoryMeta {
@@ -57,13 +58,13 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
   const { settings, syncStatus, syncError } = state
 
   // ── Radius slider ────────────────────────────────────────────────────
-  // Slider is index-based (0..4) because the 5 radius values aren't evenly
+  // Slider is index-based (0..5) because the 6 radius values aren't evenly
   // spaced — mapping by index is simpler than custom step math.
   const radiusIndex = RADIUS_CHOICES.indexOf(settings.radiusMiles)
 
   function handleRadiusChange(raw: number) {
-    const idx = Math.round(raw) as 0 | 1 | 2 | 3 | 4
-    const clamped = Math.max(0, Math.min(4, idx))
+    const idx = Math.round(raw) as 0 | 1 | 2 | 3 | 4 | 5
+    const clamped = Math.max(0, Math.min(5, idx))
     const mi = RADIUS_CHOICES[clamped] as RadiusMiles
     dispatch({ type: 'radius-changed', radiusMiles: mi })
   }
@@ -93,7 +94,7 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
             value={radiusIndex === -1 ? 2 : radiusIndex}
             onChange={handleRadiusChange}
             min={0}
-            max={4}
+            max={5}
             step={1}
           />
           {/* Tick labels below the track — 5 values, spaced evenly */}
