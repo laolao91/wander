@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-05-03
+
+Double-tap back now works on real hardware. In detail view, double-tap
+goes to the POI list. In navigation, double-tap returns to the detail
+view. Settings changes (radius and category) now refresh the phone
+Nearby tab reliably without depending on GPS re-acquisition. Search
+radius maximum raised to 2 miles. Version number now displays
+correctly.
+
 ## [1.2.0] - 2026-05-02
 
 Navigation and UX overhaul. Double-tap now goes back to the previous screen
