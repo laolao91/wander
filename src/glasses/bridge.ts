@@ -62,7 +62,7 @@ let _lastScrollAt = 0
 // This prevents accidentally executing an action (e.g. opening POI_ACTIONS)
 // while the user is trying to go back. The 1st tap's action still fires.
 //   - `_clickCount` resets to 0 so the next tap starts a fresh sequence.
-const MANUAL_EXIT_TAP_WINDOW_MS = 350
+const MANUAL_EXIT_TAP_WINDOW_MS = 500
 let _clickCount = 0
 let _lastClickAt = 0
 
@@ -208,6 +208,13 @@ export async function initGlasses(): Promise<void> {
     state = result.state
 
     if (prev.screen !== state.screen) {
+      // Reset the manual back-tap counter when the screen type changes.
+      // Prevents a tap on one screen from accumulating with a tap on the
+      // newly-rendered screen within the extended 500ms BLE-latency window.
+      if (prev.screen.name !== state.screen.name) {
+        _clickCount = 0
+        _lastClickAt = 0
+      }
       pushScreen(bridge, prev.screen.name, state.screen)
       // NAV_ACTIVE → push the minimap PNG into the image container.
       // We do this after every screen-object change while on NAV_ACTIVE
