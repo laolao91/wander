@@ -1,13 +1,18 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { resolveLang } from './_lib/lang.js'
 import { applyCors } from './_lib/cors.js'
+import { createRequire } from 'module'
+
+const _require = createRequire(import.meta.url)
 
 interface OpeningHoursInstance {
   getState(date?: Date): boolean
   getNextChange(date?: Date): Date | undefined
 }
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const OpeningHoursParser = require('opening_hours') as {
+// opening_hours is a CJS module. Use createRequire (ESM-safe) so we can
+// load it in the Vercel serverless environment where "type":"module" makes
+// bare require() unavailable.
+const OpeningHoursParser = _require('opening_hours') as {
   new(
     value: string,
     nominatim_object?: null,

@@ -60,6 +60,7 @@ const ROUTE: Route = {
       durationSeconds: 150,
       maneuverType: 'depart',
       street: '5th Ave',
+      endPoint: null,
     },
     {
       instruction: 'Turn left onto 86th St',
@@ -67,6 +68,7 @@ const ROUTE: Route = {
       durationSeconds: 210,
       maneuverType: 'turn-left',
       street: '86th St',
+      endPoint: null,
     },
   ],
   geometry: [

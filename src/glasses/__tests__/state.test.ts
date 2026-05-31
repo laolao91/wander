@@ -20,6 +20,8 @@ function makePoi(overrides: Partial<Poi> = {}): Poi {
     wikiSummary: 'A test',
     websiteUrl: 'https://en.wikipedia.org/wiki/Test_Landmark',
     source: 'wikipedia',
+    openingHours: null,
+    isOpenNow: null,
     ...overrides,
   }
 }
