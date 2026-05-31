@@ -106,6 +106,24 @@ describe('loadSettings — empty + corrupt cases', () => {
   })
 })
 
+// ─── Units persistence ─────────────────────────────────────────────────
+
+describe('units persistence', () => {
+  it('saves metric and loads it back', async () => {
+    const kv = createMemoryKVStore()
+    const settings: Settings = { ...DEFAULT_SETTINGS, units: 'metric' }
+    await saveSettings(kv, settings)
+    const loaded = await loadSettings(kv)
+    expect(loaded.units).toBe('metric')
+  })
+
+  it('defaults to imperial when key is missing', async () => {
+    const kv = createMemoryKVStore()
+    const loaded = await loadSettings(kv)
+    expect(loaded.units).toBe('imperial')
+  })
+})
+
 // ─── Independence ──────────────────────────────────────────────────────
 
 describe('loadSettings — partial stores', () => {
