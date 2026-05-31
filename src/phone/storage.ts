@@ -23,6 +23,7 @@ import {
   DEFAULT_SETTINGS,
   RADIUS_CHOICES,
   type CategoryId,
+  type MaxResults,
   type Poi,
   type RadiusMiles,
   type Settings,
@@ -33,6 +34,8 @@ export const STORAGE_KEYS = {
   radius: 'wander_radius',
   categories: 'wander_categories',
   units: 'wander_units',
+  sort: 'wander_sort',
+  maxResults: 'wander_max_results',
   // Nearby cache (Phase I) — WANDER_BUILD_SPEC.md §10
   poiCache: 'wander_last_poi_cache',
   poiCacheTs: 'wander_last_fetch_ts',
@@ -117,15 +120,19 @@ export function createBridgeKVStore(bridge: BridgeStorageFacade): KVStore {
  * entry is treated the same as a missing one.
  */
 export async function loadSettings(kv: KVStore): Promise<Settings> {
-  const [radiusRaw, categoriesRaw, unitsRaw] = await Promise.all([
+  const [radiusRaw, categoriesRaw, unitsRaw, sortRaw, maxResultsRaw] = await Promise.all([
     kv.get(STORAGE_KEYS.radius),
     kv.get(STORAGE_KEYS.categories),
     kv.get(STORAGE_KEYS.units),
+    kv.get(STORAGE_KEYS.sort),
+    kv.get(STORAGE_KEYS.maxResults),
   ])
   return {
     radiusMiles: parseRadius(radiusRaw),
     enabledCategories: parseCategories(categoriesRaw),
     units: parseUnits(unitsRaw),
+    sort: parseSort(sortRaw),
+    maxResults: parseMaxResults(maxResultsRaw),
   }
 }
 
@@ -142,6 +149,8 @@ export async function saveSettings(
     kv.set(STORAGE_KEYS.radius, String(settings.radiusMiles)),
     kv.set(STORAGE_KEYS.categories, JSON.stringify(settings.enabledCategories)),
     kv.set(STORAGE_KEYS.units, settings.units),
+    kv.set(STORAGE_KEYS.sort, settings.sort),
+    kv.set(STORAGE_KEYS.maxResults, String(settings.maxResults)),
   ])
 }
 
@@ -162,6 +171,17 @@ function parseRadius(raw: string | null): RadiusMiles {
 function parseUnits(raw: string | null): 'imperial' | 'metric' {
   if (raw === 'metric') return 'metric'
   return 'imperial'
+}
+
+function parseSort(raw: string | null): 'proximity' | 'name' {
+  if (raw === 'name') return 'name'
+  return 'proximity'
+}
+
+function parseMaxResults(raw: string | null): MaxResults {
+  const n = Number(raw)
+  if (n === 10 || n === 15 || n === 20) return n
+  return 20
 }
 
 /**

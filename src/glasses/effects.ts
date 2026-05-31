@@ -125,6 +125,8 @@ export class EffectRunner {
         categories: settings.categories,
         lang: settings.lang ?? undefined,
         offset,
+        sort: settings.sort !== 'proximity' ? settings.sort : undefined,
+        limit: settings.maxResults,
       })
       console.log('[wander][fetch] got page', { items: page.items.length, hasMore: page.hasMore })
       this.deps.dispatch({

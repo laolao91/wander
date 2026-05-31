@@ -210,6 +210,24 @@ describe('units-changed', () => {
   })
 })
 
+// ─── Max results ──────────────────────────────────────────────────────
+
+describe('max-results-changed', () => {
+  it('updates maxResults and triggers sync', () => {
+    const { state: next, effects } = reduce(INITIAL_STATE, { type: 'max-results-changed', maxResults: 10 })
+    expect(next.settings.maxResults).toBe(10)
+    expect(next.syncStatus).toBe('syncing')
+    expect(effects.some(e => e.type === 'persist-settings')).toBe(true)
+    expect(effects.some(e => e.type === 'broadcast-settings')).toBe(true)
+  })
+  it('is a noop when maxResults unchanged', () => {
+    const state = { ...INITIAL_STATE, settings: { ...INITIAL_STATE.settings, maxResults: 10 as const } }
+    const result = reduce(state, { type: 'max-results-changed', maxResults: 10 })
+    expect(result.state).toBe(state)
+    expect(result.effects).toHaveLength(0)
+  })
+})
+
 // ─── Immutability ──────────────────────────────────────────────────────
 
 describe('reducer purity', () => {

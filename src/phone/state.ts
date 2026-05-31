@@ -54,6 +54,12 @@ export function reduce(state: PhoneState, event: PhoneEvent): ReduceResult {
       return withSettingsChange(state, nextSettings)
     }
 
+    case 'max-results-changed': {
+      if (state.settings.maxResults === event.maxResults) return noop(state)
+      const nextSettings: Settings = { ...state.settings, maxResults: event.maxResults }
+      return withSettingsChange(state, nextSettings)
+    }
+
     case 'sync-started':
       return noop({ ...state, syncStatus: 'syncing', syncError: null })
 

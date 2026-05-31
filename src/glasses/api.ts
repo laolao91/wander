@@ -132,6 +132,8 @@ export interface FetchPoisInput {
   lang?: string
   /** Page offset into the merged result set; defaults server-side to 0. */
   offset?: number
+  sort?: 'proximity' | 'name'
+  limit?: number
   signal?: AbortSignal
 }
 
@@ -151,6 +153,8 @@ export async function fetchPois(input: FetchPoisInput): Promise<PoiPage> {
   if (input.offset != null && input.offset > 0) {
     params.set('offset', String(input.offset))
   }
+  if (input.sort && input.sort !== 'proximity') params.set('sort', input.sort)
+  if (input.limit != null) params.set('limit', String(input.limit))
 
   return getJson<PoiPage>('/poi', params, input.signal)
 }

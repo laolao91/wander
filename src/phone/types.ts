@@ -81,14 +81,16 @@ export type RadiusMiles = 0.25 | 0.5 | 0.75 | 1.0 | 1.5
 
 export const RADIUS_CHOICES: readonly RadiusMiles[] = [0.25, 0.5, 0.75, 1.0, 1.5] as const
 
+// ─── Max results ──────────────────────────────────────────────────────────
+
+export type MaxResults = 10 | 15 | 20
+
+export const MAX_RESULTS_CHOICES: readonly MaxResults[] = [10, 15, 20] as const
+
 // ─── Settings ─────────────────────────────────────────────────────────────
 
 /**
  * User-configurable settings persisted across app launches.
- *
- * Note: `Display` section fields ("Sort by Proximity", "Max results 20")
- * are informational-only in v1.0 — they don't appear on this shape until
- * they're wired to something.
  */
 export interface Settings {
   radiusMiles: RadiusMiles
@@ -98,6 +100,8 @@ export interface Settings {
    */
   enabledCategories: readonly CategoryId[]
   units: 'imperial' | 'metric'
+  sort: 'proximity' | 'name'
+  maxResults: MaxResults
 }
 
 /**
@@ -115,6 +119,8 @@ export const DEFAULT_SETTINGS: Settings = {
     'restaurants',
   ],
   units: 'imperial',
+  sort: 'proximity',
+  maxResults: 20,
 }
 
 // ─── Sync status (Settings tab) ────────────────────────────────────────────
@@ -213,6 +219,10 @@ export type PhoneEvent =
   | { type: 'category-toggled'; category: CategoryId }
   /** User changed the distance units preference. */
   | { type: 'units-changed'; units: 'imperial' | 'metric' }
+  /** User changed the sort order preference. */
+  | { type: 'sort-changed'; sort: 'proximity' | 'name' }
+  /** User changed the max results preference. */
+  | { type: 'max-results-changed'; maxResults: MaxResults }
   /** Sync to glasses started (kicked off by a settings change). */
   | { type: 'sync-started' }
   /** Sync completed successfully. */

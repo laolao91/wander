@@ -18,6 +18,8 @@ describe('saveSettings → loadSettings round-trip', () => {
       radiusMiles: 1.5,
       enabledCategories: ['libraries', 'nightlife'],
       units: 'imperial',
+      sort: 'proximity',
+      maxResults: 20,
     }
     await saveSettings(kv, original)
     const loaded = await loadSettings(kv)
@@ -30,6 +32,8 @@ describe('saveSettings → loadSettings round-trip', () => {
       radiusMiles: 0.25,
       enabledCategories: [],
       units: 'imperial',
+      sort: 'proximity',
+      maxResults: 20,
     }
     await saveSettings(kv, original)
     const loaded = await loadSettings(kv)
@@ -121,6 +125,22 @@ describe('units persistence', () => {
     const kv = createMemoryKVStore()
     const loaded = await loadSettings(kv)
     expect(loaded.units).toBe('imperial')
+  })
+})
+
+// ─── maxResults persistence ────────────────────────────────────────────
+
+describe('maxResults persistence', () => {
+  it('saves and loads 10', async () => {
+    const kv = createMemoryKVStore()
+    await saveSettings(kv, { ...DEFAULT_SETTINGS, maxResults: 10 })
+    const loaded = await loadSettings(kv)
+    expect(loaded.maxResults).toBe(10)
+  })
+  it('defaults to 20 when key missing', async () => {
+    const kv = createMemoryKVStore()
+    const loaded = await loadSettings(kv)
+    expect(loaded.maxResults).toBe(20)
   })
 })
 
@@ -242,6 +262,8 @@ describe('createBridgeKVStore', () => {
       radiusMiles: 0.25,
       enabledCategories: ['libraries'],
       units: 'imperial',
+      sort: 'proximity',
+      maxResults: 20,
     }
     await saveSettings(kv, custom)
     expect(bridge.map.get(STORAGE_KEYS.radius)).toBe('0.25')

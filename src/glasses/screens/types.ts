@@ -138,6 +138,8 @@ export interface Settings {
   /** Optional locale override; null means "use Accept-Language". */
   lang: string | null
   units: 'imperial' | 'metric'
+  sort: 'proximity' | 'name'
+  maxResults: 10 | 15 | 20
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -158,6 +160,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ],
   lang: null,
   units: 'imperial',
+  sort: 'proximity',
+  maxResults: 20,
 }
 
 // ─── Transition map (documentation + runtime guard) ────────────────────

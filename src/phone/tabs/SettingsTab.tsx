@@ -16,8 +16,8 @@
  */
 
 import { SettingsGroup, ListItem, Toggle, Slider, Card } from 'even-toolkit/web'
-import type { PhoneState, PhoneEvent, CategoryId, RadiusMiles } from '../types'
-import { ALL_CATEGORIES, RADIUS_CHOICES } from '../types'
+import type { PhoneState, PhoneEvent, CategoryId, RadiusMiles, MaxResults } from '../types'
+import { ALL_CATEGORIES, RADIUS_CHOICES, MAX_RESULTS_CHOICES } from '../types'
 
 // ─── Display metadata ────────────────────────────────────────────────────
 
@@ -66,6 +66,15 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
     const clamped = Math.max(0, Math.min(4, idx))
     const mi = RADIUS_CHOICES[clamped] as RadiusMiles
     dispatch({ type: 'radius-changed', radiusMiles: mi })
+  }
+
+  // ── Max results slider ───────────────────────────────────────────────
+  const maxResultsIndex = MAX_RESULTS_CHOICES.indexOf(settings.maxResults as MaxResults)
+
+  function handleMaxResultsChange(raw: number) {
+    const idx = Math.round(raw) as 0 | 1 | 2
+    const clamped = Math.max(0, Math.min(2, idx))
+    dispatch({ type: 'max-results-changed', maxResults: MAX_RESULTS_CHOICES[clamped] })
   }
 
   // ── Category toggles ─────────────────────────────────────────────────
@@ -167,9 +176,34 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
         <ListItem
           title="Max results"
           trailing={
-            <span className="text-[14px] text-text-secondary">20</span>
+            <span className="text-[14px] text-text-secondary">
+              {settings.maxResults}
+            </span>
           }
         />
+        <div className="px-2 pt-1 pb-3">
+          <Slider
+            value={maxResultsIndex === -1 ? 2 : maxResultsIndex}
+            onChange={handleMaxResultsChange}
+            min={0}
+            max={2}
+            step={1}
+          />
+          <div className="flex justify-between mt-1">
+            {MAX_RESULTS_CHOICES.map((r) => (
+              <span
+                key={r}
+                className={
+                  r === settings.maxResults
+                    ? 'text-[12px] font-semibold text-text'
+                    : 'text-[12px] text-text-secondary'
+                }
+              >
+                {r}
+              </span>
+            ))}
+          </div>
+        </div>
       </SettingsGroup>
 
       {/* ── Sync info card ── */}
