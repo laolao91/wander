@@ -96,6 +96,7 @@ export interface RouteStep {
   durationSeconds: number
   maneuverType: ManeuverType
   street: string | null
+  endPoint: [number, number] | null
 }
 
 export interface Route {
