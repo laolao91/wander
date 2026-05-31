@@ -196,7 +196,7 @@ describe('tap on POI_DETAIL', () => {
     expect(r.state.screen).toMatchObject({
       name: 'POI_ACTIONS',
       poi: POI_A,
-      actions: ['navigate', 'safari', 'read-more', 'close', 'back'],
+      actions: ['navigate', 'safari', 'read-more', 'favorite-add', 'close', 'back'],
       cursorIndex: 0,
     })
   })
@@ -209,7 +209,7 @@ describe('tap on POI_DETAIL', () => {
     const r = reduce(detail, { type: 'tap' })
     expect(r.state.screen).toMatchObject({
       name: 'POI_ACTIONS',
-      actions: ['navigate', 'close', 'back'],
+      actions: ['navigate', 'favorite-add', 'close', 'back'],
     })
   })
 })
@@ -643,6 +643,40 @@ describe('POI_LIST cursor — sentinel slots', () => {
     expect(r.effects).toEqual([
       { type: 'fetch-pois', offset: 0, mode: 'replace' },
     ])
+  })
+})
+
+// ─── Favorites ────────────────────────────────────────────────────────────
+
+function makeFavPoi(id: string): Poi {
+  return {
+    id, name: `Place ${id}`, category: 'landmark', categoryIcon: '★',
+    lat: 0, lng: 0, distanceMeters: 100, distanceMiles: 0.06,
+    bearingDegrees: 0, walkMinutes: 2, wikiTitle: null, wikiSummary: null,
+    websiteUrl: null, source: 'osm', openingHours: null, isOpenNow: null,
+  }
+}
+
+describe('favorites', () => {
+  it('favorite-toggled adds a POI to favorites and emits save-favorites', () => {
+    const poi = makeFavPoi('a')
+    const { state: next, effects } = reduce(INITIAL_STATE, { type: 'favorite-toggled', poi })
+    expect(next.favorites).toHaveLength(1)
+    expect(next.favorites[0].id).toBe('a')
+    expect(effects).toContainEqual({ type: 'save-favorites', favorites: next.favorites })
+  })
+  it('favorite-toggled removes a POI that is already saved', () => {
+    const poi = makeFavPoi('a')
+    const stateWithFav = { ...INITIAL_STATE, favorites: [poi] }
+    const { state: next, effects } = reduce(stateWithFav, { type: 'favorite-toggled', poi })
+    expect(next.favorites).toHaveLength(0)
+    expect(effects).toContainEqual({ type: 'save-favorites', favorites: [] })
+  })
+  it('favorites-loaded sets the favorites list', () => {
+    const pois = [makeFavPoi('a'), makeFavPoi('b')]
+    const { state: next, effects } = reduce(INITIAL_STATE, { type: 'favorites-loaded', favorites: pois })
+    expect(next.favorites).toHaveLength(2)
+    expect(effects).toHaveLength(0)
   })
 })
 

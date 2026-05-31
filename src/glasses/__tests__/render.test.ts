@@ -679,6 +679,43 @@ describe('POI_DETAIL opening hours in body', () => {
   })
 })
 
+describe('ACTION_LABEL favorites', () => {
+  it('renders ★ Save for favorite-add action', () => {
+    const poi = {
+      id: 't', name: 'P', category: 'landmark' as const, categoryIcon: '★',
+      lat: 0, lng: 0, distanceMeters: 100, distanceMiles: 0.06, bearingDegrees: 0,
+      walkMinutes: 2, wikiTitle: null, wikiSummary: null, websiteUrl: null,
+      source: 'osm' as const, openingHours: null, isOpenNow: null,
+    }
+    const screen = {
+      name: 'POI_ACTIONS' as const,
+      poi,
+      actions: ['favorite-add' as const, 'close' as const],
+      cursorIndex: 0,
+    }
+    const result = renderScreen(screen, 'imperial')
+    const body = result.textObject?.find(c => c.containerName === 'actions-body')
+    expect(body?.content).toContain('★ Save')
+  })
+  it('renders ★ Saved for favorite-remove action', () => {
+    const poi = {
+      id: 't', name: 'P', category: 'landmark' as const, categoryIcon: '★',
+      lat: 0, lng: 0, distanceMeters: 100, distanceMiles: 0.06, bearingDegrees: 0,
+      walkMinutes: 2, wikiTitle: null, wikiSummary: null, websiteUrl: null,
+      source: 'osm' as const, openingHours: null, isOpenNow: null,
+    }
+    const screen = {
+      name: 'POI_ACTIONS' as const,
+      poi,
+      actions: ['favorite-remove' as const, 'close' as const],
+      cursorIndex: 0,
+    }
+    const result = renderScreen(screen, 'imperial')
+    const body = result.textObject?.find(c => c.containerName === 'actions-body')
+    expect(body?.content).toContain('★ Saved')
+  })
+})
+
 describe('renderScreen units param — metric formatting', () => {
   function makePoi(distanceMiles: number) {
     return {

@@ -442,6 +442,8 @@ const ACTION_LABEL: Record<PoiDetailAction, string> = {
   // browser overlay is up. (Tracked for next session.)
   safari: 'Open on Phone',
   'read-more': 'Read More',
+  'favorite-add': '★ Save',
+  'favorite-remove': '★ Saved',
   // 'close' dismisses the action menu and returns to the POI detail view.
   // 'back' exits the detail entirely and returns to the POI list.
   close: '← Back',

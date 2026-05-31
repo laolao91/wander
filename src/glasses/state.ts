@@ -37,6 +37,7 @@ export interface AppState {
   /** Pending refresh result while user is in non-POI_LIST screens. */
   pendingPoiRefresh: { pois: Poi[]; hasMore: boolean } | null
   settings: Settings
+  favorites: Poi[]
 }
 
 // LOADING messages are also a poor-man's progress indicator: when the
@@ -58,6 +59,7 @@ export const INITIAL_STATE: AppState = {
   position: null,
   pendingPoiRefresh: null,
   settings: DEFAULT_SETTINGS,
+  favorites: [],
 }
 
 // ─── Events ────────────────────────────────────────────────────────────
@@ -103,6 +105,8 @@ export type Event =
   | { type: 'position-updated'; lat: number; lng: number }
   | { type: 'settings-changed'; settings: Partial<Settings> }
   | { type: 'retry' }
+  | { type: 'favorite-toggled'; poi: Poi }
+  | { type: 'favorites-loaded'; favorites: Poi[] }
 
 /**
  * Side-effects the reducer requests from the bridge, returned alongside
@@ -120,6 +124,7 @@ export type Effect =
   | { type: 'start-nav-watch' }
   | { type: 'stop-nav-watch' }
   | { type: 'exit-app' }
+  | { type: 'save-favorites'; favorites: Poi[] }
 
 export interface ReducerResult {
   state: AppState
@@ -173,6 +178,12 @@ export function reduce(state: AppState, event: Event): ReducerResult {
 
     case 'retry':
       return onRetry(state)
+
+    case 'favorite-toggled':
+      return onFavoriteToggled(state, event.poi)
+
+    case 'favorites-loaded':
+      return { state: { ...state, favorites: event.favorites }, effects: [] }
 
     case 'load-more':
       return onLoadMore(state)
@@ -415,6 +426,24 @@ function onRetry(state: AppState): ReducerResult {
   return noop(state)
 }
 
+function onFavoriteToggled(state: AppState, poi: Poi): ReducerResult {
+  const alreadySaved = state.favorites.some(f => f.id === poi.id)
+  const nextFavorites = alreadySaved
+    ? state.favorites.filter(f => f.id !== poi.id)
+    : [...state.favorites, poi]
+  const nextState = { ...state, favorites: nextFavorites }
+  const saveEffect: Effect = { type: 'save-favorites', favorites: nextFavorites }
+  // Rebuild POI_ACTIONS so the ★ Save / ★ Saved label flips immediately.
+  if (state.screen.name === 'POI_ACTIONS') {
+    return next(
+      nextState,
+      { ...state.screen, actions: actionsForPoi(state.screen.poi, nextFavorites) },
+      [saveEffect],
+    )
+  }
+  return { state: nextState, effects: [saveEffect] }
+}
+
 function onTap(state: AppState, itemIndex?: number): ReducerResult {
   switch (state.screen.name) {
     case 'POI_LIST': {
@@ -463,7 +492,7 @@ function onTap(state: AppState, itemIndex?: number): ReducerResult {
       return next(state, {
         name: 'POI_ACTIONS',
         poi: state.screen.poi,
-        actions: actionsForPoi(state.screen.poi),
+        actions: actionsForPoi(state.screen.poi, state.favorites),
         cursorIndex: 0,
       })
 
@@ -599,6 +628,9 @@ function executePoiDetailAction(
         state,
         effects: [{ type: 'fetch-wiki', title: poi.wikiTitle, lang: state.settings.lang }],
       }
+    case 'favorite-add':
+    case 'favorite-remove':
+      return reduce(state, { type: 'favorite-toggled', poi })
     case 'close':
       // Dismiss the action menu and return to the POI detail view.
       return next(state, { name: 'POI_DETAIL', poi })
@@ -613,10 +645,12 @@ const ALL_CATEGORIES: Category[] = [
   'landmark', 'park', 'museum', 'religion', 'art', 'library', 'food', 'nightlife',
 ]
 
-function actionsForPoi(poi: Poi): PoiDetailAction[] {
+function actionsForPoi(poi: Poi, favorites: Poi[]): PoiDetailAction[] {
   const actions: PoiDetailAction[] = ['navigate']
   if (poi.websiteUrl) actions.push('safari')
   if (poi.wikiTitle) actions.push('read-more')
+  const isFav = favorites.some(f => f.id === poi.id)
+  actions.push(isFav ? 'favorite-remove' : 'favorite-add')
   // 'close' dismisses the action menu and returns to POI_DETAIL.
   // 'back' goes all the way back to POI_LIST.
   actions.push('close')

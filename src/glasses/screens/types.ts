@@ -90,7 +90,14 @@ export interface PoiActionsScreen {
   cursorIndex: number
 }
 
-export type PoiDetailAction = 'navigate' | 'safari' | 'read-more' | 'close' | 'back'
+export type PoiDetailAction =
+  | 'navigate'
+  | 'safari'
+  | 'read-more'
+  | 'favorite-add'
+  | 'favorite-remove'
+  | 'close'
+  | 'back'
 
 export interface NavActiveScreen {
   name: 'NAV_ACTIVE'
