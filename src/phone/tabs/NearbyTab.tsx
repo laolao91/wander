@@ -103,6 +103,14 @@ export function NearbyTab({ state, dispatch }: NearbyTabProps) {
     return () => clearInterval(id)
   }, [])
 
+  const [query, setQuery] = useState('')
+
+  useEffect(() => {
+    if (nearby.fetchStatus === 'locating' || nearby.fetchStatus === 'fetching') {
+      setQuery('')
+    }
+  }, [nearby.fetchStatus])
+
   const isLoading = nearby.fetchStatus === 'locating' || nearby.fetchStatus === 'fetching'
   const hasPois = nearby.pois.length > 0
 
@@ -171,17 +179,39 @@ export function NearbyTab({ state, dispatch }: NearbyTabProps) {
   }
 
   // ── POI list ──────────────────────────────────────────────────────────
-  const grouped = groupByCategory(nearby.pois)
+  const filteredPois = query.trim()
+    ? nearby.pois.filter(p => p.name.toLowerCase().includes(query.trim().toLowerCase()))
+    : nearby.pois
+
+  const grouped = groupByCategory(filteredPois)
   const categories = CATEGORY_ORDER.filter((c) => grouped.has(c))
 
   return (
     <div className="pb-8">
       <RefreshBar
-        count={nearby.pois.length}
+        count={filteredPois.length}
         lastFetchTs={nearby.lastFetchTs}
         onRefresh={handleRefresh}
         isLoading={isLoading}
       />
+
+      {/* Search filter */}
+      {hasPois && (
+        <div className="px-4 pt-3 pb-1">
+          <input
+            type="search"
+            placeholder="Filter places…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full px-3 py-2 text-[14px] bg-surface border border-border rounded-[6px] text-text placeholder:text-text-dim outline-none focus:border-accent"
+          />
+        </div>
+      )}
+      {hasPois && filteredPois.length === 0 && query.trim() && (
+        <div className="px-4 pt-4 text-[14px] text-text-dim text-center">
+          No places matching "{query}"
+        </div>
+      )}
 
       {/* Inline loading indicator when refreshing stale data */}
       {isLoading && (
