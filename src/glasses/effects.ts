@@ -12,6 +12,7 @@
  */
 
 import { ApiError, fetchPois, fetchRoute, fetchWiki } from './api'
+import type { Poi } from './api'
 import type { Event, Effect } from './state'
 import type { Settings } from './screens/types'
 
@@ -30,6 +31,8 @@ export interface EffectRunnerDeps {
   ) => () => void
   /** Tear down the page container and exit the app (CONFIRM_EXIT → "Yes"). */
   exitApp?: () => void
+  /** Persist the current favorites list to storage. */
+  saveFavorites?: (favorites: Poi[]) => Promise<void>
 }
 
 export class EffectRunner {
@@ -44,6 +47,7 @@ export class EffectRunner {
       openUrl: deps.openUrl ?? defaultOpenUrl,
       watchPosition: deps.watchPosition ?? defaultWatchPosition,
       exitApp: deps.exitApp ?? (() => {}),
+      saveFavorites: deps.saveFavorites ?? (async () => {}),
     }
   }
 
@@ -74,6 +78,9 @@ export class EffectRunner {
         return
       case 'exit-app':
         this.deps.exitApp()
+        return
+      case 'save-favorites':
+        await this.deps.saveFavorites(effect.favorites)
         return
     }
   }

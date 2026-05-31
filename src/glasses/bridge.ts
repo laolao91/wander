@@ -130,6 +130,16 @@ export async function initGlasses(): Promise<void> {
     // route through the OS browser and free the glasses cursor. If it
     // rejects (method unknown), we fall back to `_system` then `_blank`.
     openUrl: (url) => openExternalUrl(bridge, url),
+    saveFavorites: async (favorites) => {
+      await bridge.setLocalStorage('wander_favorites', JSON.stringify(favorites))
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('wander-favorites-changed', {
+            detail: { favorites },
+          }),
+        )
+      }
+    },
   })
 
   // Boot screen — the LOADING screen rendered by renderScreen.
@@ -143,6 +153,27 @@ export async function initGlasses(): Promise<void> {
     }),
   )
   console.log('[wander][boot] startup container painted')
+
+  // Load persisted favorites and hydrate state before first render.
+  try {
+    const favRaw = await bridge.getLocalStorage('wander_favorites')
+    if (favRaw) {
+      const parsed = JSON.parse(favRaw) as unknown
+      if (Array.isArray(parsed)) {
+        dispatch({ type: 'favorites-loaded', favorites: parsed as import('./api').Poi[] })
+      }
+    }
+  } catch {
+    // Corrupt storage — start with empty favorites.
+  }
+  // Fire CustomEvent so the phone tab gets the initial favorites list.
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('wander-favorites-changed', {
+        detail: { favorites: state.favorites },
+      }),
+    )
+  }
 
   // Kick off the first POI fetch and start the background refresh timer.
   console.log('[wander][boot] dispatch fetch-pois')
