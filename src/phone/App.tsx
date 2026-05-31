@@ -39,6 +39,9 @@ import { categoryIdsToCategories } from './types'
 import { fetchPois } from '../glasses/api'
 import { SettingsTab } from './tabs/SettingsTab'
 import { NearbyTab } from './tabs/NearbyTab'
+import { FavoritesTab } from './tabs/FavoritesTab'
+import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk'
+import type { Poi } from '../glasses/api'
 
 // ─── KV store (browser localStorage adapter) ─────────────────────────────
 
@@ -186,7 +189,7 @@ function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void
 
 // ─── App root ─────────────────────────────────────────────────────────────
 
-type Tab = 'nearby' | 'settings'
+type Tab = 'nearby' | 'settings' | 'favorites'
 
 export function App() {
   const [tab, setTab] = useState<Tab>('nearby')
@@ -202,6 +205,33 @@ export function App() {
     }
     window.addEventListener('wander-g2-status', handler)
     return () => window.removeEventListener('wander-g2-status', handler)
+  }, [])
+
+  const [favorites, setFavorites] = useState<Poi[]>([])
+
+  useEffect(() => {
+    // Subscribe to live updates from the glasses bridge.
+    const handler = (e: Event) => {
+      const { favorites: favs } = (e as CustomEvent<{ favorites: Poi[] }>).detail
+      setFavorites(favs)
+    }
+    window.addEventListener('wander-favorites-changed', handler)
+
+    // Seed initial state from SDK storage in case bridge fired before mount.
+    waitForEvenAppBridge().then((bridge) => {
+      bridge.getLocalStorage('wander_favorites').then((raw) => {
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw) as unknown
+            if (Array.isArray(parsed)) setFavorites(parsed as Poi[])
+          } catch {
+            // Ignore corrupt data.
+          }
+        }
+      }).catch(() => {})
+    }).catch(() => {})
+
+    return () => window.removeEventListener('wander-favorites-changed', handler)
   }, [])
 
   const [phoneState, setPhoneState] = useState<PhoneState>(INITIAL_STATE)
@@ -246,7 +276,7 @@ export function App() {
 
   // ── Render ──────────────────────────────────────────────────────────
 
-  const tabTitle = tab === 'nearby' ? 'Nearby' : 'Settings'
+  const tabTitle = tab === 'nearby' ? 'Nearby' : tab === 'settings' ? 'Settings' : 'Saved'
 
   return (
     <div className="flex flex-col h-screen w-full overflow-hidden bg-bg">
@@ -297,8 +327,10 @@ export function App() {
       <div className="flex-1 min-h-0 overflow-y-auto w-full">
         {tab === 'nearby' ? (
           <NearbyTab state={phoneState} dispatch={dispatch} />
-        ) : (
+        ) : tab === 'settings' ? (
           <SettingsTab state={phoneState} dispatch={dispatch} />
+        ) : (
+          <FavoritesTab favorites={favorites} />
         )}
       </div>
 
@@ -330,6 +362,17 @@ export function App() {
         >
           <span className="text-[20px] leading-none select-none" aria-hidden>⚙</span>
           <span className="text-[10px] tracking-[-0.1px]">Settings</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('favorites')}
+          className={[
+            'flex-1 flex flex-col items-center justify-center py-2 gap-0.5 cursor-pointer transition-colors',
+            tab === 'favorites' ? 'text-accent' : 'text-text-dim',
+          ].join(' ')}
+        >
+          <span className="text-[20px] leading-none select-none" aria-hidden>★</span>
+          <span className="text-[10px] tracking-[-0.1px]">Saved</span>
         </button>
       </nav>
 
