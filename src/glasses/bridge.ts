@@ -175,11 +175,13 @@ export async function initGlasses(): Promise<void> {
   // dispatches 'wander-settings-changed'. We apply them here so the next
   // fetch (background or user-triggered) uses the updated values.
   const handleSettingsChanged = (e: globalThis.Event) => {
-    const { radiusMiles, categories, units } = (
+    const { radiusMiles, categories, units, sort, maxResults } = (
       e as CustomEvent<{
         radiusMiles: number
         categories: string[]
         units?: 'imperial' | 'metric'
+        sort?: 'proximity' | 'name'
+        maxResults?: number
       }>
     ).detail
     dispatch({
@@ -188,6 +190,8 @@ export async function initGlasses(): Promise<void> {
         radiusMiles,
         categories: categories as import('./api').Category[],
         ...(units !== undefined ? { units } : {}),
+        ...(sort !== undefined ? { sort } : {}),
+        ...(maxResults === 10 || maxResults === 15 || maxResults === 20 ? { maxResults } : {}),
       },
     })
   }

@@ -144,6 +144,22 @@ describe('maxResults persistence', () => {
   })
 })
 
+// ─── sort persistence ─────────────────────────────────────────────────
+
+describe('sort persistence', () => {
+  it('saves and loads name sort', async () => {
+    const kv = createMemoryKVStore()
+    await saveSettings(kv, { ...DEFAULT_SETTINGS, sort: 'name' })
+    const loaded = await loadSettings(kv)
+    expect(loaded.sort).toBe('name')
+  })
+  it('defaults to proximity when key missing', async () => {
+    const kv = createMemoryKVStore()
+    const loaded = await loadSettings(kv)
+    expect(loaded.sort).toBe('proximity')
+  })
+})
+
 // ─── Independence ──────────────────────────────────────────────────────
 
 describe('loadSettings — partial stores', () => {

@@ -228,6 +228,23 @@ describe('max-results-changed', () => {
   })
 })
 
+// ─── Sort ─────────────────────────────────────────────────────────────
+
+describe('sort-changed', () => {
+  it('updates sort to name and triggers sync', () => {
+    const { state: next, effects } = reduce(INITIAL_STATE, { type: 'sort-changed', sort: 'name' })
+    expect(next.settings.sort).toBe('name')
+    expect(next.syncStatus).toBe('syncing')
+    expect(effects.some(e => e.type === 'persist-settings')).toBe(true)
+    expect(effects.some(e => e.type === 'broadcast-settings')).toBe(true)
+  })
+  it('is a noop when sort unchanged', () => {
+    const result = reduce(INITIAL_STATE, { type: 'sort-changed', sort: 'proximity' })
+    expect(result.state).toBe(INITIAL_STATE)
+    expect(result.effects).toHaveLength(0)
+  })
+})
+
 // ─── Immutability ──────────────────────────────────────────────────────
 
 describe('reducer purity', () => {

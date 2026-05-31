@@ -177,6 +177,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     PAGE_SIZE,
   )
 
+  const sortParam = typeof req.query.sort === 'string' && req.query.sort === 'name'
+    ? 'name'
+    : 'proximity'
+
   const enabled = parseCategories(req.query.categories)
   // Diagnostic logging — visible in Vercel function logs. Added 2026-04-24
   // to investigate why a NYC test returned only 1 POI. Tag is short so it's
@@ -216,7 +220,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const filtered = deduped.filter((p) => enabled.has(p.category))
     const allMerged = filtered
       .map((p) => enrichDistance(p, lat, lng))
-      .sort((a, b) => a.distanceMeters - b.distanceMeters)
+      .sort((a, b) =>
+        sortParam === 'name'
+          ? a.name.localeCompare(b.name)
+          : a.distanceMeters - b.distanceMeters
+      )
       .slice(0, MAX_RESULTS_TOTAL)
 
     const items = allMerged.slice(offset, offset + limitParam)

@@ -60,6 +60,12 @@ export function reduce(state: PhoneState, event: PhoneEvent): ReduceResult {
       return withSettingsChange(state, nextSettings)
     }
 
+    case 'sort-changed': {
+      if (state.settings.sort === event.sort) return noop(state)
+      const nextSettings: Settings = { ...state.settings, sort: event.sort }
+      return withSettingsChange(state, nextSettings)
+    }
+
     case 'sync-started':
       return noop({ ...state, syncStatus: 'syncing', syncError: null })
 

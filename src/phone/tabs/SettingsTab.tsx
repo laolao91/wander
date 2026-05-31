@@ -168,9 +168,17 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
           }
         />
         <ListItem
-          title="Sort by"
+          title="Sort by name"
           trailing={
-            <span className="text-[14px] text-text-secondary">Proximity</span>
+            <Toggle
+              checked={settings.sort === 'name'}
+              onChange={() =>
+                dispatch({
+                  type: 'sort-changed',
+                  sort: settings.sort === 'name' ? 'proximity' : 'name',
+                })
+              }
+            />
           }
         />
         <ListItem

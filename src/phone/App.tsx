@@ -93,6 +93,8 @@ function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void
               radiusMiles: effect.settings.radiusMiles,
               categories: mappedCategories,
               units: effect.settings.units,
+              sort: effect.settings.sort,
+              maxResults: effect.settings.maxResults,
             },
           }),
         )
