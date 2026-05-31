@@ -61,7 +61,7 @@ async function simulateDispatch(
 describe('boot sequence: loadSettings → settings-hydrated', () => {
   it('state reflects stored settings after hydration', async () => {
     const kv = createMemoryKVStore()
-    const stored: Settings = { radiusMiles: 1.5, enabledCategories: ['museums', 'nightlife'], units: 'imperial' }
+    const stored: Settings = { radiusMiles: 1.5, enabledCategories: ['museums', 'nightlife'], units: 'imperial', sort: 'proximity', maxResults: 20 }
     await saveSettings(kv, stored)
 
     const loaded = await loadSettings(kv)
@@ -268,7 +268,7 @@ describe('broadcast-settings effect', () => {
   it('is NOT emitted on settings-hydrated (boot is not a change)', () => {
     const result = reduce(INITIAL_STATE, {
       type: 'settings-hydrated',
-      settings: { radiusMiles: 1.5, enabledCategories: [], units: 'imperial' },
+      settings: { radiusMiles: 1.5, enabledCategories: [], units: 'imperial', sort: 'proximity', maxResults: 20 },
     })
     const types = result.effects.map((e) => e.type)
     expect(types).not.toContain('broadcast-settings')
