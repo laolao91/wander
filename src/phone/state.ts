@@ -94,7 +94,7 @@ export function reduce(state: PhoneState, event: PhoneEvent): ReduceResult {
             errorMessage: null,
           },
         },
-        effects: [{ type: 'request-location' }],
+        effects: [{ type: 'request-location', manualLocation: state.settings.manualLocation }],
       }
 
     case 'location-acquired':
@@ -177,6 +177,42 @@ export function reduce(state: PhoneState, event: PhoneEvent): ReduceResult {
           errorMessage: event.message,
         },
       })
+
+    case 'manual-location-selected': {
+      const nextSettings: Settings = { ...state.settings, manualLocation: event.location }
+      return {
+        state: {
+          ...state,
+          settings: nextSettings,
+          syncStatus: 'syncing',
+          syncError: null,
+          nearby: { ...state.nearby, fetchStatus: 'locating', errorMessage: null },
+        },
+        effects: [
+          { type: 'persist-settings', settings: nextSettings },
+          { type: 'broadcast-settings', settings: nextSettings },
+          { type: 'request-location', manualLocation: nextSettings.manualLocation },
+        ],
+      }
+    }
+
+    case 'manual-location-cleared': {
+      const nextSettings: Settings = { ...state.settings, manualLocation: null }
+      return {
+        state: {
+          ...state,
+          settings: nextSettings,
+          syncStatus: 'syncing',
+          syncError: null,
+          nearby: { ...state.nearby, fetchStatus: 'locating', errorMessage: null },
+        },
+        effects: [
+          { type: 'persist-settings', settings: nextSettings },
+          { type: 'broadcast-settings', settings: nextSettings },
+          { type: 'request-location', manualLocation: null },
+        ],
+      }
+    }
   }
 }
 
@@ -219,7 +255,7 @@ function withSettingsChange(
     effects: [
       { type: 'persist-settings', settings: nextSettings },
       { type: 'broadcast-settings', settings: nextSettings },
-      { type: 'request-location' },
+      { type: 'request-location', manualLocation: nextSettings.manualLocation },
     ],
   }
 }

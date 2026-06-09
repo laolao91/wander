@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { INITIAL_STATE, reduce } from '../state'
 import {
   DEFAULT_SETTINGS,
+  type ManualLocation,
   type PhoneEvent,
   type PhoneState,
   type Settings,
@@ -73,7 +74,7 @@ describe('radius-changed', () => {
     expect(result.effects).toEqual([
       { type: 'persist-settings', settings: result.state.settings },
       { type: 'broadcast-settings', settings: result.state.settings },
-      { type: 'request-location' },
+      { type: 'request-location', manualLocation: null },
     ])
   })
 
@@ -137,7 +138,7 @@ describe('category-toggled', () => {
     expect(result.effects).toEqual([
       { type: 'persist-settings', settings: result.state.settings },
       { type: 'broadcast-settings', settings: result.state.settings },
-      { type: 'request-location' },
+      { type: 'request-location', manualLocation: null },
     ])
   })
 
@@ -261,5 +262,51 @@ describe('reducer purity', () => {
     const snapshot = JSON.stringify(INITIAL_STATE)
     reduce(INITIAL_STATE, { type: 'radius-changed', radiusMiles: 1.5 })
     expect(JSON.stringify(INITIAL_STATE)).toBe(snapshot)
+  })
+})
+
+// ─── Manual location ───────────────────────────────────────────────────────
+
+const TEST_LOCATION: ManualLocation = {
+  label: 'Times Square, Manhattan, New York',
+  lat: 40.758,
+  lng: -73.9855,
+}
+
+describe('manual-location-selected', () => {
+  it('saves location to settings', () => {
+    const result = reduce(INITIAL_STATE, { type: 'manual-location-selected', location: TEST_LOCATION })
+    expect(result.state.settings.manualLocation).toEqual(TEST_LOCATION)
+  })
+
+  it('emits persist-settings, broadcast-settings, request-location', () => {
+    const result = reduce(INITIAL_STATE, { type: 'manual-location-selected', location: TEST_LOCATION })
+    expect(result.effects.map((e) => e.type)).toEqual(['persist-settings', 'broadcast-settings', 'request-location'])
+  })
+
+  it('request-location carries the new manualLocation', () => {
+    const result = reduce(INITIAL_STATE, { type: 'manual-location-selected', location: TEST_LOCATION })
+    const rl = result.effects.find((e) => e.type === 'request-location') as { type: 'request-location'; manualLocation: ManualLocation | null } | undefined
+    expect(rl?.manualLocation).toEqual(TEST_LOCATION)
+  })
+
+  it('sets nearby fetchStatus to locating', () => {
+    const result = reduce(INITIAL_STATE, { type: 'manual-location-selected', location: TEST_LOCATION })
+    expect(result.state.nearby.fetchStatus).toBe('locating')
+  })
+})
+
+describe('manual-location-cleared', () => {
+  it('nulls out manualLocation in settings', () => {
+    const withManual = apply(INITIAL_STATE, { type: 'manual-location-selected', location: TEST_LOCATION })
+    const result = reduce(withManual, { type: 'manual-location-cleared' })
+    expect(result.state.settings.manualLocation).toBeNull()
+  })
+
+  it('request-location carries null manualLocation', () => {
+    const withManual = apply(INITIAL_STATE, { type: 'manual-location-selected', location: TEST_LOCATION })
+    const result = reduce(withManual, { type: 'manual-location-cleared' })
+    const rl = result.effects.find((e) => e.type === 'request-location') as { type: 'request-location'; manualLocation: ManualLocation | null } | undefined
+    expect(rl?.manualLocation).toBeNull()
   })
 })
