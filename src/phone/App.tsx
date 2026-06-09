@@ -120,6 +120,11 @@ function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void
       return
 
     case 'request-location': {
+      // Manual location short-circuit: skip GPS when a manual location is set.
+      if (effect.manualLocation) {
+        dispatch({ type: 'location-acquired', lat: effect.manualLocation.lat, lng: effect.manualLocation.lng })
+        return
+      }
       // Dev simulator mock — reads VITE_MOCK_LAT/LNG from .env.local.
       // Tree-shaken out of production builds (import.meta.env.DEV = false).
       if (import.meta.env.DEV) {
@@ -294,8 +299,14 @@ export function App() {
           <span className="text-[15px] text-text-dim leading-none">/</span>
           <span className="text-[15px] text-text leading-none font-normal">{tabTitle}</span>
 
-          {/* Location label — Nearby tab only */}
-          {tab === 'nearby' && phoneState.nearby.location && (
+          {/* Manual location badge — all tabs when override is active */}
+          {phoneState.settings.manualLocation && (
+            <span className="ml-auto text-[11px] font-semibold text-yellow-400 bg-yellow-400/10 px-1.5 py-0.5 rounded shrink-0">
+              📍 Manual
+            </span>
+          )}
+          {/* Location label — Nearby tab, GPS mode only */}
+          {tab === 'nearby' && phoneState.nearby.location && !phoneState.settings.manualLocation && (
             <span className="ml-auto text-[11px] text-text-dim truncate">
               {phoneState.nearby.location.label ?? 'Near you'}
             </span>
@@ -305,7 +316,7 @@ export function App() {
           <span
             className={[
               'shrink-0 w-2 h-2 rounded-full',
-              tab === 'nearby' && phoneState.nearby.location ? '' : 'ml-auto',
+              !phoneState.settings.manualLocation && !(tab === 'nearby' && phoneState.nearby.location) ? 'ml-auto' : '',
               g2Connected === null
                 ? 'bg-text-dim opacity-40'
                 : g2Connected
