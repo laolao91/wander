@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { searchLocations } from '../components/LocationSearchForm'
+import { searchLocations } from '../lib/geocoding'
 import type { ManualLocation } from '../types'
 
 const MOCK_RESULTS: ManualLocation[] = [

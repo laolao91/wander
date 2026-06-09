@@ -1,15 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { Loading } from 'even-toolkit/web'
 import type { ManualLocation } from '../types'
+import { searchLocations } from '../lib/geocoding'
 
-// ─── Pure search function (exported for testing) ─────────────────────────
-
-export async function searchLocations(query: string): Promise<ManualLocation[]> {
-  const res = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`)
-  if (!res.ok) throw new Error(`geocode failed: ${res.status}`)
-  const data = await res.json() as { results: ManualLocation[] }
-  return data.results
-}
+export { searchLocations }
 
 // ─── Component ────────────────────────────────────────────────────────────
 
