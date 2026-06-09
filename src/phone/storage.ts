@@ -23,6 +23,7 @@ import {
   DEFAULT_SETTINGS,
   RADIUS_CHOICES,
   type CategoryId,
+  type ManualLocation,
   type MaxResults,
   type Poi,
   type RadiusMiles,
@@ -36,6 +37,7 @@ export const STORAGE_KEYS = {
   units: 'wander_units',
   sort: 'wander_sort',
   maxResults: 'wander_max_results',
+  manualLocation: 'wander_manual_location',
   // Nearby cache (Phase I) — WANDER_BUILD_SPEC.md §10
   poiCache: 'wander_last_poi_cache',
   poiCacheTs: 'wander_last_fetch_ts',
@@ -120,19 +122,22 @@ export function createBridgeKVStore(bridge: BridgeStorageFacade): KVStore {
  * entry is treated the same as a missing one.
  */
 export async function loadSettings(kv: KVStore): Promise<Settings> {
-  const [radiusRaw, categoriesRaw, unitsRaw, sortRaw, maxResultsRaw] = await Promise.all([
-    kv.get(STORAGE_KEYS.radius),
-    kv.get(STORAGE_KEYS.categories),
-    kv.get(STORAGE_KEYS.units),
-    kv.get(STORAGE_KEYS.sort),
-    kv.get(STORAGE_KEYS.maxResults),
-  ])
+  const [radiusRaw, categoriesRaw, unitsRaw, sortRaw, maxResultsRaw, manualLocationRaw] =
+    await Promise.all([
+      kv.get(STORAGE_KEYS.radius),
+      kv.get(STORAGE_KEYS.categories),
+      kv.get(STORAGE_KEYS.units),
+      kv.get(STORAGE_KEYS.sort),
+      kv.get(STORAGE_KEYS.maxResults),
+      kv.get(STORAGE_KEYS.manualLocation),
+    ])
   return {
     radiusMiles: parseRadius(radiusRaw),
     enabledCategories: parseCategories(categoriesRaw),
     units: parseUnits(unitsRaw),
     sort: parseSort(sortRaw),
     maxResults: parseMaxResults(maxResultsRaw),
+    manualLocation: parseManualLocation(manualLocationRaw),
   }
 }
 
@@ -151,6 +156,10 @@ export async function saveSettings(
     kv.set(STORAGE_KEYS.units, settings.units),
     kv.set(STORAGE_KEYS.sort, settings.sort),
     kv.set(STORAGE_KEYS.maxResults, String(settings.maxResults)),
+    kv.set(
+      STORAGE_KEYS.manualLocation,
+      settings.manualLocation ? JSON.stringify(settings.manualLocation) : '',
+    ),
   ])
 }
 
@@ -207,6 +216,25 @@ function parseCategories(raw: string | null): readonly CategoryId[] {
     typeof x === 'string' && known.has(x as CategoryId),
   )
   return filtered
+}
+
+function parseManualLocation(raw: string | null): ManualLocation | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof (parsed as Record<string, unknown>).label === 'string' &&
+      typeof (parsed as Record<string, unknown>).lat === 'number' &&
+      typeof (parsed as Record<string, unknown>).lng === 'number'
+    ) {
+      return parsed as ManualLocation
+    }
+  } catch {
+    // malformed — treat as null
+  }
+  return null
 }
 
 // ─── Nearby cache (Phase I) ────────────────────────────────────────────────

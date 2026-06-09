@@ -188,7 +188,7 @@ describe('location-acquired', () => {
   it('bakes in current settings at emit time (snapshot)', () => {
     const customState: PhoneState = {
       ...locatingState,
-      settings: { radiusMiles: 1.5, enabledCategories: ['museums'], units: 'imperial', sort: 'proximity', maxResults: 20 },
+      settings: { radiusMiles: 1.5, enabledCategories: ['museums'], units: 'imperial', sort: 'proximity', maxResults: 20, manualLocation: null },
     }
     const result = reduce(customState, { type: 'location-acquired', lat: 0, lng: 0 })
     const effect = result.effects[0]

@@ -20,6 +20,7 @@ describe('saveSettings → loadSettings round-trip', () => {
       units: 'imperial',
       sort: 'proximity',
       maxResults: 20,
+      manualLocation: null,
     }
     await saveSettings(kv, original)
     const loaded = await loadSettings(kv)
@@ -34,11 +35,33 @@ describe('saveSettings → loadSettings round-trip', () => {
       units: 'imperial',
       sort: 'proximity',
       maxResults: 20,
+      manualLocation: null,
     }
     await saveSettings(kv, original)
     const loaded = await loadSettings(kv)
     expect(loaded.enabledCategories).toEqual([])
     expect(loaded.radiusMiles).toBe(0.25)
+  })
+
+  it('round-trips a manual location', async () => {
+    const kv = createMemoryKVStore()
+    const original: Settings = {
+      radiusMiles: 0.75,
+      enabledCategories: ['historic'],
+      units: 'imperial',
+      sort: 'proximity',
+      maxResults: 20,
+      manualLocation: { label: 'Times Square, Manhattan, New York', lat: 40.758, lng: -73.9855 },
+    }
+    await saveSettings(kv, original)
+    const loaded = await loadSettings(kv)
+    expect(loaded.manualLocation).toEqual(original.manualLocation)
+  })
+
+  it('returns null manualLocation when key is missing', async () => {
+    const kv = createMemoryKVStore()
+    const loaded = await loadSettings(kv)
+    expect(loaded.manualLocation).toBeNull()
   })
 
   it('uses the canonical storage keys from spec §10', async () => {
@@ -280,6 +303,7 @@ describe('createBridgeKVStore', () => {
       units: 'imperial',
       sort: 'proximity',
       maxResults: 20,
+      manualLocation: null,
     }
     await saveSettings(kv, custom)
     expect(bridge.map.get(STORAGE_KEYS.radius)).toBe('0.25')

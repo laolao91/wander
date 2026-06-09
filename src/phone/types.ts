@@ -87,6 +87,18 @@ export type MaxResults = 10 | 15 | 20
 
 export const MAX_RESULTS_CHOICES: readonly MaxResults[] = [10, 15, 20] as const
 
+// ─── Manual location ──────────────────────────────────────────────────────
+
+/**
+ * A user-specified location that overrides GPS. Stored in Settings so it
+ * persists across sessions until explicitly cleared.
+ */
+export interface ManualLocation {
+  label: string   // "Times Square, Manhattan, New York"
+  lat: number
+  lng: number
+}
+
 // ─── Settings ─────────────────────────────────────────────────────────────
 
 /**
@@ -102,6 +114,8 @@ export interface Settings {
   units: 'imperial' | 'metric'
   sort: 'proximity' | 'name'
   maxResults: MaxResults
+  /** Overrides GPS when set. Null means use device GPS. */
+  manualLocation: ManualLocation | null
 }
 
 /**
@@ -121,6 +135,7 @@ export const DEFAULT_SETTINGS: Settings = {
   units: 'imperial',
   sort: 'proximity',
   maxResults: 20,
+  manualLocation: null,
 }
 
 // ─── Sync status (Settings tab) ────────────────────────────────────────────
@@ -242,6 +257,10 @@ export type PhoneEvent =
   | { type: 'nearby-pois-loaded'; pois: readonly Poi[]; fetchedAt: number }
   /** POI fetch failed with a user-facing message. */
   | { type: 'nearby-fetch-failed'; message: string }
+  /** User selected a manual location from search results. */
+  | { type: 'manual-location-selected'; location: ManualLocation }
+  /** User cleared the manual location override in Settings. */
+  | { type: 'manual-location-cleared' }
 
 // ─── Effects ──────────────────────────────────────────────────────────────
 
@@ -256,8 +275,11 @@ export type PhoneEffect =
   /** Notify the glasses that settings changed (phone→glasses channel). */
   | { type: 'broadcast-settings'; settings: Settings }
   // ── Nearby ──
-  /** Request the device's current GPS coordinates (one-shot). */
-  | { type: 'request-location' }
+  /**
+   * Request location. If `manualLocation` is set, the effect runner uses
+   * those coords directly and skips GPS. If null, falls through to GPS.
+   */
+  | { type: 'request-location'; manualLocation: ManualLocation | null }
   /**
    * Fetch POIs from /api/poi for the given location + current settings.
    * Settings are baked in at emit time so the effect is self-contained.
