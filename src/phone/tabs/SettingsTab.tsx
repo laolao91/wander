@@ -15,9 +15,11 @@
  * ("PHONE SCREEN 2: Settings Tab").
  */
 
+import { useState } from 'react'
 import { SettingsGroup, ListItem, Toggle, Slider, Card } from 'even-toolkit/web'
-import type { PhoneState, PhoneEvent, CategoryId, RadiusMiles, MaxResults } from '../types'
+import type { PhoneState, PhoneEvent, CategoryId, RadiusMiles, MaxResults, ManualLocation } from '../types'
 import { ALL_CATEGORIES, RADIUS_CHOICES, MAX_RESULTS_CHOICES } from '../types'
+import { LocationSearchForm } from '../components/LocationSearchForm'
 
 // ─── Display metadata ────────────────────────────────────────────────────
 
@@ -55,6 +57,7 @@ export interface SettingsTabProps {
 
 export function SettingsTab({ state, dispatch }: SettingsTabProps) {
   const { settings, syncStatus, syncError } = state
+  const [isEditingLocation, setIsEditingLocation] = useState(false)
 
   // ── Radius slider ────────────────────────────────────────────────────
   // Slider is index-based (0..4) because the 5 radius values aren't evenly
@@ -94,6 +97,67 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
 
   return (
     <div className="w-full px-4 pt-4 pb-8 space-y-6">
+
+      {/* ── Manual Location ── */}
+      <SettingsGroup label="Location" className="w-full">
+        {!settings.manualLocation && !isEditingLocation && (
+          <div className="px-3 py-2">
+            <p className="text-[13px] text-text-secondary mb-2">
+              Pin a specific place instead of using GPS.
+            </p>
+            <button
+              type="button"
+              onClick={() => setIsEditingLocation(true)}
+              className="text-[13px] text-accent font-medium"
+            >
+              Set location…
+            </button>
+          </div>
+        )}
+
+        {settings.manualLocation && !isEditingLocation && (
+          <div className="px-3 py-2">
+            <div className="flex items-start justify-between mb-1">
+              <span className="text-[13px] font-semibold text-text">Manual Location</span>
+              <span className="text-[10px] font-bold bg-yellow-400 text-black px-1.5 py-0.5 rounded ml-2 shrink-0">
+                ACTIVE
+              </span>
+            </div>
+            <p className="text-[12px] text-yellow-400 mb-1">📍 {settings.manualLocation.label}</p>
+            <p className="text-[11px] text-text-secondary mb-2">
+              GPS is overridden. POIs are based on this location.
+            </p>
+            <div className="flex gap-4">
+              <button
+                type="button"
+                onClick={() => setIsEditingLocation(true)}
+                className="text-[12px] text-accent"
+              >
+                Change…
+              </button>
+              <button
+                type="button"
+                onClick={() => dispatch({ type: 'manual-location-cleared' })}
+                className="text-[12px] text-red-400"
+              >
+                Clear (use GPS)
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isEditingLocation && (
+          <div className="px-3 py-2">
+            <LocationSearchForm
+              onSelect={(loc: ManualLocation) => {
+                dispatch({ type: 'manual-location-selected', location: loc })
+                setIsEditingLocation(false)
+              }}
+              onCancel={() => setIsEditingLocation(false)}
+            />
+          </div>
+        )}
+      </SettingsGroup>
 
       {/* ── Search Radius ── */}
       <SettingsGroup label="Search Radius" className="w-full">
