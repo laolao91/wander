@@ -11,8 +11,9 @@
 
 import { SectionHeader, ListItem, Loading, EmptyState } from 'even-toolkit/web'
 import { useEffect, useState } from 'react'
-import type { PhoneState, PhoneEvent } from '../types'
+import type { PhoneState, PhoneEvent, ManualLocation } from '../types'
 import type { Poi } from '../../glasses/api'
+import { LocationSearchForm } from '../components/LocationSearchForm'
 
 // ─── Category display names (API → human label) ───────────────────────────
 
@@ -104,10 +105,12 @@ export function NearbyTab({ state, dispatch }: NearbyTabProps) {
   }, [])
 
   const [query, setQuery] = useState('')
+  const [isChangingLocation, setIsChangingLocation] = useState(false)
 
   useEffect(() => {
     if (nearby.fetchStatus === 'locating' || nearby.fetchStatus === 'fetching') {
       setQuery('')
+      setIsChangingLocation(false)
     }
   }, [nearby.fetchStatus])
 
@@ -135,11 +138,15 @@ export function NearbyTab({ state, dispatch }: NearbyTabProps) {
   if (nearby.fetchStatus === 'error-location' && !hasPois) {
     return (
       <div className="px-4 pt-4 pb-8">
-        <EmptyState
-          icon={<span className="text-[32px]">📍</span>}
-          title="Location unavailable"
-          description={nearby.errorMessage ?? 'Allow location access to discover nearby places.'}
-          action={{ label: 'Try again', onClick: handleRefresh }}
+        <div className="text-[28px] text-center mb-2">📍</div>
+        <h2 className="text-[15px] font-semibold text-text text-center mb-1">Where are you?</h2>
+        <p className="text-[13px] text-text-dim text-center mb-4">
+          Location unavailable. Search for a neighborhood or landmark to find places nearby.
+        </p>
+        <LocationSearchForm
+          onSelect={(loc: ManualLocation) => {
+            dispatch({ type: 'manual-location-selected', location: loc })
+          }}
         />
       </div>
     )
@@ -194,6 +201,35 @@ export function NearbyTab({ state, dispatch }: NearbyTabProps) {
         onRefresh={handleRefresh}
         isLoading={isLoading}
       />
+
+      {/* Manual location banner */}
+      {state.settings.manualLocation && !isChangingLocation && (
+        <div className="mx-4 mt-3 px-3 py-2 bg-yellow-400/10 border border-yellow-400/20 rounded-[6px] flex items-center justify-between">
+          <span className="text-[12px] text-yellow-400 font-medium truncate mr-2">
+            📍 {state.settings.manualLocation.label}
+          </span>
+          <button
+            type="button"
+            onClick={() => setIsChangingLocation(true)}
+            className="text-[11px] text-text-dim shrink-0"
+          >
+            Change
+          </button>
+        </div>
+      )}
+
+      {/* Inline location change form */}
+      {isChangingLocation && (
+        <div className="mx-4 mt-3 px-3 py-3 bg-surface rounded-[6px] border border-border">
+          <LocationSearchForm
+            onSelect={(loc: ManualLocation) => {
+              dispatch({ type: 'manual-location-selected', location: loc })
+              setIsChangingLocation(false)
+            }}
+            onCancel={() => setIsChangingLocation(false)}
+          />
+        </div>
+      )}
 
       {/* Search filter */}
       {hasPois && (
