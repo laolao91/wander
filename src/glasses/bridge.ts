@@ -206,13 +206,14 @@ export async function initGlasses(): Promise<void> {
   // dispatches 'wander-settings-changed'. We apply them here so the next
   // fetch (background or user-triggered) uses the updated values.
   const handleSettingsChanged = (e: globalThis.Event) => {
-    const { radiusMiles, categories, units, sort, maxResults } = (
+    const { radiusMiles, categories, units, sort, maxResults, manualLocation } = (
       e as CustomEvent<{
         radiusMiles: number
         categories: string[]
         units?: 'imperial' | 'metric'
         sort?: 'proximity' | 'name'
         maxResults?: number
+        manualLocation?: { lat: number; lng: number } | null
       }>
     ).detail
     dispatch({
@@ -223,6 +224,9 @@ export async function initGlasses(): Promise<void> {
         ...(units !== undefined ? { units } : {}),
         ...(sort !== undefined ? { sort } : {}),
         ...(maxResults === 10 || maxResults === 15 || maxResults === 20 ? { maxResults } : {}),
+        // Forward manual location override — undefined means the field wasn't
+        // included in the event (old sender), null means "cleared, use GPS".
+        ...(manualLocation !== undefined ? { manualLocation: manualLocation ?? null } : {}),
       },
     })
   }

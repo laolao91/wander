@@ -98,6 +98,7 @@ function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void
               units: effect.settings.units,
               sort: effect.settings.sort,
               maxResults: effect.settings.maxResults,
+              manualLocation: effect.settings.manualLocation,
             },
           }),
         )
@@ -176,6 +177,8 @@ function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void
         lng: effect.lng,
         radiusMiles: effect.settings.radiusMiles,
         categories: categoryIdsToCategories(effect.settings.enabledCategories),
+        sort: effect.settings.sort !== 'proximity' ? effect.settings.sort : undefined,
+        limit: effect.settings.maxResults,
       }).then((page) => {
         dispatch({ type: 'nearby-pois-loaded', pois: page.items, fetchedAt: Date.now() })
       }).catch((err: unknown) => {

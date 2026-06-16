@@ -109,14 +109,25 @@ export class EffectRunner {
     isBackgroundRefresh: boolean,
   ): Promise<void> {
     console.log('[wander][fetch] begin', { offset, mode, isBackgroundRefresh })
-    const pos = await this.deps.geolocate()
+    const settings = this.deps.getSettings()
+
+    // Manual location short-circuit: if the user pinned a location on the
+    // phone, use those coords directly and skip the GPS round-trip. This
+    // keeps the glasses in sync with whatever the phone's Nearby tab shows.
+    let pos: { lat: number; lng: number } | null
+    if (settings.manualLocation) {
+      pos = { lat: settings.manualLocation.lat, lng: settings.manualLocation.lng }
+      console.log('[wander][fetch] using manual location', pos)
+    } else {
+      pos = await this.deps.geolocate()
+    }
+
     if (!pos) {
       console.warn('[wander][fetch] no position — dispatching pois-failed/location')
       this.deps.dispatch({ type: 'pois-failed', reason: 'location' })
       return
     }
     this.deps.dispatch({ type: 'position-updated', lat: pos.lat, lng: pos.lng })
-    const settings = this.deps.getSettings()
 
     try {
       console.log('[wander][fetch] /api/poi', {

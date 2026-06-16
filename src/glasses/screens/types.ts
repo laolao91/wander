@@ -139,6 +139,11 @@ export interface ErrorEmptyScreen {
 
 // ─── Settings (kept on AppState, surfaced into POI fetches) ────────────
 
+export interface ManualLocation {
+  lat: number
+  lng: number
+}
+
 export interface Settings {
   radiusMiles: number
   categories: import('../api').Category[]
@@ -147,6 +152,8 @@ export interface Settings {
   units: 'imperial' | 'metric'
   sort: 'proximity' | 'name'
   maxResults: 10 | 15 | 20
+  /** When set, use these coords instead of GPS for POI fetches. */
+  manualLocation: ManualLocation | null
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -169,6 +176,7 @@ export const DEFAULT_SETTINGS: Settings = {
   units: 'imperial',
   sort: 'proximity',
   maxResults: 20,
+  manualLocation: null,
 }
 
 // ─── Transition map (documentation + runtime guard) ────────────────────

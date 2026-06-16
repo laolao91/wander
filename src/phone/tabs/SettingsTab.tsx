@@ -102,7 +102,7 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
       <SettingsGroup label="Location" className="w-full">
         {!settings.manualLocation && !isEditingLocation && (
           <div className="px-3 py-2">
-            <p className="text-[13px] text-text-secondary mb-2">
+            <p className="text-[13px] text-text-dim mb-2">
               Pin a specific place instead of using GPS.
             </p>
             <button
@@ -124,7 +124,7 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
               </span>
             </div>
             <p className="text-[12px] text-yellow-400 mb-1">📍 {settings.manualLocation.label}</p>
-            <p className="text-[11px] text-text-secondary mb-2">
+            <p className="text-[11px] text-text-dim mb-2">
               GPS is overridden. POIs are based on this location.
             </p>
             <div className="flex gap-4">
@@ -177,7 +177,7 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
                 className={
                   r === settings.radiusMiles
                     ? 'text-[12px] font-semibold text-text'
-                    : 'text-[12px] text-text-secondary'
+                    : 'text-[12px] text-text-dim'
                 }
               >
                 {RADIUS_LABELS[r]}
@@ -248,7 +248,7 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
         <ListItem
           title="Max results"
           trailing={
-            <span className="text-[14px] text-text-secondary">
+            <span className="text-[14px] text-text-dim">
               {settings.maxResults}
             </span>
           }
@@ -268,7 +268,7 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
                 className={
                   r === settings.maxResults
                     ? 'text-[12px] font-semibold text-text'
-                    : 'text-[12px] text-text-secondary'
+                    : 'text-[12px] text-text-dim'
                 }
               >
                 {r}
@@ -280,7 +280,7 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
 
       {/* ── Sync info card ── */}
       <Card className="w-full">
-        <p className="text-[13px] leading-snug tracking-[-0.1px] text-text-secondary">
+        <p className="text-[13px] leading-snug tracking-[-0.1px] text-text-dim">
           {syncLabel}
         </p>
       </Card>
