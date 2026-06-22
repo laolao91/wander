@@ -38,6 +38,7 @@ import type { PhoneEvent, PhoneEffect, PhoneState } from './types'
 import { categoryIdsToCategories } from './types'
 import { fetchPois } from '../glasses/api'
 import { bridgeGeolocate } from '../glasses/appsBridge'
+import { sdkGeolocate } from '../glasses/sdkLocation'
 import { SettingsTab } from './tabs/SettingsTab'
 import { NearbyTab } from './tabs/NearbyTab'
 import { FavoritesTab } from './tabs/FavoritesTab'
@@ -73,7 +74,69 @@ const kv: KVStore =
 
 // ─── Effect runner ────────────────────────────────────────────────────────
 
-function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void {
+/**
+ * Falls back to `navigator.geolocation` (then APPS Bridge on failure/
+ * absence) when the Even Hub SDK location attempt comes back empty. This
+ * is the pre-SDK `request-location` behaviour, extracted verbatim so it
+ * can run as a second-tier fallback after `sdkGeolocate()`.
+ */
+export function requestLocationViaNavigatorOrBridge(dispatch: (e: PhoneEvent) => void): void {
+  if (!navigator.geolocation) {
+    // No native geolocation at all — try APPS Bridge (the Android
+    // companion app) before giving up. Resolves null if it isn't
+    // installed/running, in which case we fall through to the same
+    // failure message as before.
+    bridgeGeolocate().then((fix) => {
+      if (fix) {
+        dispatch({ type: 'location-acquired', lat: fix.lat, lng: fix.lng, source: 'bridge' })
+        return
+      }
+      dispatch({ type: 'location-failed', message: 'Geolocation not supported on this device.' })
+    })
+    return
+  }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      dispatch({
+        type: 'location-acquired',
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        source: 'native',
+      })
+    },
+    (err) => {
+      // Map raw GeolocationPositionError codes to actionable messages.
+      // Code 1 (PERMISSION_DENIED) can fire on Android even when the user
+      // hasn't denied anything — EvenHub's prototype/sideload WebView
+      // doesn't always forward the host app's location permission into the
+      // WebView context. Production installs (via EvenHub store) resolve
+      // this. Code 2/3 are genuine device/timeout failures.
+      //
+      // Before surfacing a failure, try APPS Bridge — if the user has it
+      // installed and running, it sources GPS straight from Android,
+      // independent of the host WebView's permission forwarding.
+      bridgeGeolocate().then((fix) => {
+        if (fix) {
+          dispatch({ type: 'location-acquired', lat: fix.lat, lng: fix.lng, source: 'bridge' })
+          return
+        }
+        let message: string
+        if (err.code === 1 /* PERMISSION_DENIED */) {
+          message =
+            'Location permission is required. If you\'ve already granted it, try force-quitting and reopening the app.'
+        } else if (err.code === 2 /* POSITION_UNAVAILABLE */) {
+          message = 'Your location couldn\'t be determined. Make sure location services are enabled.'
+        } else {
+          message = 'Location request timed out. Check your location settings and try again.'
+        }
+        dispatch({ type: 'location-failed', message })
+      })
+    },
+    { timeout: 10_000, maximumAge: 30_000 },
+  )
+}
+
+export function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void {
   switch (effect.type) {
     case 'persist-settings':
       saveSettings(kv, effect.settings).then(() => {
@@ -137,59 +200,19 @@ function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void
           return
         }
       }
-      if (!navigator.geolocation) {
-        // No native geolocation at all — try APPS Bridge (the Android
-        // companion app) before giving up. Resolves null if it isn't
-        // installed/running, in which case we fall through to the same
-        // failure message as before.
-        bridgeGeolocate().then((fix) => {
-          if (fix) {
-            dispatch({ type: 'location-acquired', lat: fix.lat, lng: fix.lng, source: 'bridge' })
-            return
-          }
-          dispatch({ type: 'location-failed', message: 'Geolocation not supported on this device.' })
-        })
-        return
-      }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          dispatch({
-            type: 'location-acquired',
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            source: 'native',
-          })
-        },
-        (err) => {
-          // Map raw GeolocationPositionError codes to actionable messages.
-          // Code 1 (PERMISSION_DENIED) can fire on Android even when the user
-          // hasn't denied anything — EvenHub's prototype/sideload WebView
-          // doesn't always forward the host app's location permission into the
-          // WebView context. Production installs (via EvenHub store) resolve
-          // this. Code 2/3 are genuine device/timeout failures.
-          //
-          // Before surfacing a failure, try APPS Bridge — if the user has it
-          // installed and running, it sources GPS straight from Android,
-          // independent of the host WebView's permission forwarding.
-          bridgeGeolocate().then((fix) => {
-            if (fix) {
-              dispatch({ type: 'location-acquired', lat: fix.lat, lng: fix.lng, source: 'bridge' })
-              return
-            }
-            let message: string
-            if (err.code === 1 /* PERMISSION_DENIED */) {
-              message =
-                'Location permission is required. If you\'ve already granted it, try force-quitting and reopening the app.'
-            } else if (err.code === 2 /* POSITION_UNAVAILABLE */) {
-              message = 'Your location couldn\'t be determined. Make sure location services are enabled.'
-            } else {
-              message = 'Location request timed out. Check your location settings and try again.'
-            }
-            dispatch({ type: 'location-failed', message })
-          })
-        },
-        { timeout: 10_000, maximumAge: 30_000 },
-      )
+      // Even-Realities-native SDK location (phone-side getAppLocation via
+      // the Even Hub bridge) is the primary source — try it first. It
+      // never throws and resolves null on any failure (old host SDK,
+      // bridge unavailable, no fix, permission issue), in which case we
+      // fall through to the existing navigator.geolocation → APPS Bridge
+      // chain unchanged.
+      sdkGeolocate().then((fix) => {
+        if (fix) {
+          dispatch({ type: 'location-acquired', lat: fix.lat, lng: fix.lng, source: 'native' })
+          return
+        }
+        requestLocationViaNavigatorOrBridge(dispatch)
+      })
       return
     }
 

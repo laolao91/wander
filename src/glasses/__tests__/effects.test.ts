@@ -1,8 +1,19 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
-import { EffectRunner } from '../effects'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+import { EffectRunner, defaultGeolocate, defaultWatchPosition } from '../effects'
 import type { Event } from '../state'
 import { DEFAULT_SETTINGS } from '../screens/types'
 import * as api from '../api'
+import { sdkGeolocate, sdkWatchPosition } from '../sdkLocation'
+import { bridgeGeolocate, bridgeWatchPosition } from '../appsBridge'
+
+vi.mock('../sdkLocation', () => ({
+  sdkGeolocate: vi.fn(),
+  sdkWatchPosition: vi.fn(),
+}))
+vi.mock('../appsBridge', () => ({
+  bridgeGeolocate: vi.fn(),
+  bridgeWatchPosition: vi.fn(),
+}))
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 
@@ -43,6 +54,8 @@ const MOCK_POI = {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 
 // ─── fetch-pois ────────────────────────────────────────────────────────
@@ -242,5 +255,96 @@ describe('nav watch', () => {
     await runner.run({ type: 'start-nav-watch' })
     runner.dispose()
     expect(cancelled).toBe(true)
+  })
+})
+
+// ─── defaultGeolocate / defaultWatchPosition ──────────────────────────────
+
+describe('defaultGeolocate / defaultWatchPosition', () => {
+  beforeEach(() => {
+    vi.mocked(sdkGeolocate).mockReset()
+    vi.mocked(sdkWatchPosition).mockReset()
+    vi.mocked(bridgeGeolocate).mockReset()
+    vi.mocked(bridgeWatchPosition).mockReset()
+    // Neutralize the DEV mock-coords short-circuit (.env.local sets
+    // VITE_MOCK_LAT/LNG for the simulator) so these tests exercise the
+    // real SDK → navigator → APPS Bridge ordering instead of returning
+    // the mock immediately.
+    vi.stubEnv('VITE_MOCK_LAT', '')
+    vi.stubEnv('VITE_MOCK_LNG', '')
+  })
+
+  it('defaultGeolocate returns the SDK fix immediately and does not call bridgeGeolocate', async () => {
+    vi.mocked(sdkGeolocate).mockResolvedValue({ lat: 1, lng: 2 })
+    const result = await defaultGeolocate()
+    expect(result).toEqual({ lat: 1, lng: 2 })
+    expect(bridgeGeolocate).not.toHaveBeenCalled()
+  })
+
+  it('defaultGeolocate falls through to bridgeGeolocate when sdkGeolocate resolves null and navigator.geolocation is unavailable', async () => {
+    vi.mocked(sdkGeolocate).mockResolvedValue(null)
+    vi.mocked(bridgeGeolocate).mockResolvedValue({ lat: 3, lng: 4 })
+    const result = await defaultGeolocate()
+    expect(sdkGeolocate).toHaveBeenCalled()
+    expect(bridgeGeolocate).toHaveBeenCalled()
+    expect(result).toEqual({ lat: 3, lng: 4 })
+  })
+
+  it('defaultGeolocate falls through to navigator.geolocation when sdkGeolocate resolves null, returning the native fix without calling bridgeGeolocate', async () => {
+    vi.mocked(sdkGeolocate).mockResolvedValue(null)
+    vi.stubGlobal('navigator', {
+      geolocation: {
+        getCurrentPosition: (success: (p: unknown) => void) => {
+          success({ coords: { latitude: 5, longitude: 6 } })
+        },
+        watchPosition: vi.fn(),
+        clearWatch: vi.fn(),
+      },
+    })
+    const result = await defaultGeolocate()
+    expect(result).toEqual({ lat: 5, lng: 6 })
+    expect(bridgeGeolocate).not.toHaveBeenCalled()
+  })
+
+  it('defaultWatchPosition starts sdkWatchPosition unconditionally alongside the bridge watch when navigator.geolocation is unavailable, and cancel cancels both', () => {
+    const cancelSdkSpy = vi.fn()
+    const cancelBridgeSpy = vi.fn()
+    vi.mocked(sdkWatchPosition).mockReturnValue(cancelSdkSpy)
+    vi.mocked(bridgeWatchPosition).mockReturnValue(cancelBridgeSpy)
+
+    const onPosition = vi.fn()
+    const cancel = defaultWatchPosition(onPosition)
+
+    expect(sdkWatchPosition).toHaveBeenCalledWith(onPosition)
+    expect(bridgeWatchPosition).toHaveBeenCalledWith(onPosition)
+
+    cancel()
+    expect(cancelSdkSpy).toHaveBeenCalledTimes(1)
+    expect(cancelBridgeSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('defaultWatchPosition with navigator.geolocation stubbed still starts sdkWatchPosition and cancel calls sdk cancel + navigator.geolocation.clearWatch', () => {
+    const cancelSdkSpy = vi.fn()
+    vi.mocked(sdkWatchPosition).mockReturnValue(cancelSdkSpy)
+
+    const clearWatchSpy = vi.fn()
+    const watchPositionSpy = vi.fn().mockReturnValue(42)
+    vi.stubGlobal('navigator', {
+      geolocation: {
+        getCurrentPosition: vi.fn(),
+        watchPosition: watchPositionSpy,
+        clearWatch: clearWatchSpy,
+      },
+    })
+
+    const onPosition = vi.fn()
+    const cancel = defaultWatchPosition(onPosition)
+
+    expect(sdkWatchPosition).toHaveBeenCalledWith(onPosition)
+    expect(bridgeWatchPosition).not.toHaveBeenCalled()
+
+    cancel()
+    expect(cancelSdkSpy).toHaveBeenCalledTimes(1)
+    expect(clearWatchSpy).toHaveBeenCalledWith(42)
   })
 })

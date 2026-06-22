@@ -5,7 +5,63 @@ All notable changes to Wander will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.10.0] - 2026-06-22
+
+Added the Even Hub SDK's native phone-location bridge (`@evenrealities/even_hub_sdk`
+0.0.11's `getAppLocation`/`startAppLocationUpdates`/`stopAppLocationUpdates`/
+`onAppLocationChanged`) as a new shared module, `src/glasses/sdkLocation.ts`
+(`sdkGeolocate()` one-shot, `sdkWatchPosition()` continuous — same defensive
+"never throws, resolves null/no-ops on any failure" contract as the existing
+APPS Bridge client). Wired in as an **additional** location source ahead of
+the existing chain, not a replacement: source priority is now SDK bridge →
+`navigator.geolocation` → APPS Bridge, i.e. anything Even-Realities-native
+(the new SDK call and `navigator.geolocation` alike) is tried before the
+third-party APPS Bridge fallback, which stays exactly where it was — last
+resort. The new SDK call goes through the same native bridge channel as
+`getUserInfo()`/`getDeviceInfo()` rather than `navigator.geolocation`'s
+WebView permission plumbing, so it may sidestep the long-standing Android
+permission-forwarding gap — but, like the APPS Bridge fallback before it,
+this is **unconfirmed on real hardware**. Behavior is unchanged when the
+host SDK doesn't support the new calls (older Even Hub versions): every new
+call is wrapped so a missing/rejecting bridge method falls straight through
+to the existing navigator/bridge logic, unchanged.
+
+**Modified:**
+- `src/glasses/effects.ts` — `defaultGeolocate()` now tries `sdkGeolocate()`
+  first (full internal timeout) before its existing navigator/wall-clock/
+  APPS-Bridge logic, untouched below that point. `defaultWatchPosition()`
+  now starts `sdkWatchPosition()` unconditionally alongside whichever
+  navigator/bridge watch starts below — consistent with this function's
+  existing "concurrent redundant sources, duplicate updates are harmless"
+  pattern — and the returned cancel function tears down every source that
+  got started.
+- `src/phone/App.tsx` — the `request-location` effect case tries
+  `sdkGeolocate()` first (after the manual-location and DEV-mock checks,
+  unchanged); on an empty result it falls through to the pre-existing
+  navigator.geolocation → APPS Bridge logic, extracted verbatim into a new
+  exported helper, `requestLocationViaNavigatorOrBridge()`, so it can run
+  as a second-tier fallback and be tested directly.
+
+**New files:**
+- `src/glasses/sdkLocation.ts` + `src/glasses/__tests__/sdkLocation.test.ts`
+  (11 tests against an injected fake bridge — success, null result,
+  rejection, bridge-unavailable, non-finite/missing coordinates, watch
+  subscribe/start/cancel ordering, and the cancel-before-bridge-resolves
+  race).
+- `src/phone/__tests__/runEffect.test.ts` (6 tests covering the
+  `request-location` effect's new source ordering and the extracted
+  `requestLocationViaNavigatorOrBridge` helper in isolation).
+
+Also extended `src/glasses/__tests__/effects.test.ts` with 5 new tests
+covering `defaultGeolocate`/`defaultWatchPosition`'s new ordering (both
+functions are now exported from `effects.ts` for this purpose — purely
+additive, no existing behavior changed). Test suite: 358 tests across 16
+files (was 336/14 before this change). `min_sdk_version` in `app.json` is
+intentionally left at `0.0.10` — the new calls degrade gracefully on older
+hosts, so this isn't a hard requirement, just an opportunistic additional
+source.
+
+## [1.9.0] - 2026-06-21
 
 Added an APPS Bridge fallback for GPS on Android (`src/glasses/appsBridge.ts`).
 When `navigator.geolocation` fails, times out, or is unavailable, Wander now

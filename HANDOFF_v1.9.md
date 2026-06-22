@@ -1,5 +1,117 @@
 # Wander v1.9 — Session Handoff
-_Updated: 2026-06-21 | Status: Local only — not yet pushed to GitHub or submitted to EvenHub_
+_Updated: 2026-06-22 | Status: v1.10.0 code complete, tests green — commit/push/EHPK pending (see entry below)_
+
+---
+
+## 2026-06-22 — Even Hub SDK native phone-location bridge (additive, v1.10.0)
+
+`@evenrealities/even_hub_sdk` was bumped 0.0.10 → 0.0.11, which added an
+official native phone-location bridge API: `bridge.getAppLocation(options?)`,
+`bridge.startAppLocationUpdates(options?)`, `bridge.stopAppLocationUpdates()`,
+`bridge.onAppLocationChanged(callback)` (types: `AppLocationAccuracy`,
+`AppLocation`, `AppLocationOptions`). This goes through the same native
+bridge channel as `getUserInfo()`/`getDeviceInfo()` rather than
+`navigator.geolocation`'s WebView permission plumbing — it may sidestep the
+long-standing Android permission-forwarding gap described in the entry
+below, but **this is unconfirmed on real hardware**, exactly like the APPS
+Bridge fallback was when it shipped. Treat it as another candidate location
+source, not a proven fix.
+
+**Scope, per explicit decision:** wired in as an **additional** path, not a
+replacement. New priority order: anything Even-Realities-native is primary
+— both this new SDK call AND the existing `navigator.geolocation` count as
+"native," neither is the third-party hack — and APPS Bridge remains the
+last-resort fallback, in exactly the position it already occupied. Nothing
+about when APPS Bridge kicks in changed.
+
+**New files:**
+- `src/glasses/sdkLocation.ts` — `sdkGeolocate()` (one-shot, mirrors
+  `defaultGeolocate`'s `{lat,lng}|null` shape; calls `getAppLocation({
+  accuracy: High, timeoutMs: 8000 })`) and `sdkWatchPosition()` (continuous,
+  mirrors `defaultWatchPosition`'s `(onPosition) => cancel` shape; resolves
+  the bridge async, subscribes via `onAppLocationChanged`, calls
+  `startAppLocationUpdates({ accuracy: High, intervalMs: 3000,
+  distanceFilter: 5 })`, returns a synchronous cancel guarded against the
+  race where `cancel()` fires before the bridge promise resolves). Both
+  follow `appsBridge.ts`'s defensive contract exactly: never throw, resolve
+  null / no-op on any failure (old host SDK, bridge unavailable, no fix,
+  non-finite coordinates), so callers' existing "no position" handling is
+  unchanged. Bridge access is injectable (`LocationBridge` =
+  `Pick<EvenAppBridge, 'getAppLocation' | 'startAppLocationUpdates' |
+  'stopAppLocationUpdates' | 'onAppLocationChanged'>`, default getter
+  `waitForEvenAppBridge`) so tests can supply a fake instead of a real
+  bridge — same DI spirit as `appsBridge.ts`'s injectable
+  `BridgeSocketFactory`.
+- `src/glasses/__tests__/sdkLocation.test.ts` — 11 tests against an injected
+  fake bridge (success mapping, null result, rejection, bridge-unavailable,
+  non-finite/missing coordinates, watch subscribe/start ordering, cancel
+  after start, and the cancel-before-bridge-resolves race).
+- `src/phone/__tests__/runEffect.test.ts` — 6 tests covering `App.tsx`'s
+  `request-location` effect's new source ordering (manual → DEV mock → SDK
+  → navigator → APPS Bridge) and the extracted
+  `requestLocationViaNavigatorOrBridge` helper in isolation. No test
+  previously exercised `runEffect`'s body directly (existing phone tests
+  only assert what the *reducer* emits); mocking `even-toolkit/web`'s
+  Vite-only module resolution required stubbing the three tab components
+  and `waitForEvenAppBridge` so the test file could import `App.tsx`'s
+  exports outside of Vite — see the test file's header comment for detail.
+
+**Modified:**
+- `src/glasses/effects.ts` — `defaultGeolocate()` now tries `sdkGeolocate()`
+  first (its own internal 8s timeout budget) before falling through to the
+  existing navigator/15s-wall-clock/APPS-Bridge logic, untouched below that
+  point. `defaultWatchPosition()` now starts `sdkWatchPosition()`
+  unconditionally, running concurrently alongside whichever navigator/bridge
+  watch starts below — consistent with this function's pre-existing
+  "concurrent redundant sources, duplicate updates are harmless" pattern —
+  and the returned cancel function tears down every source that actually
+  started (sdk + navigator + APPS-Bridge-if-it-was-started-on-error). Both
+  functions are now exported (were previously module-private) purely so
+  `effects.test.ts` can call them directly; this changes nothing about
+  existing behavior or existing tests. 5 new tests added covering the new
+  ordering.
+- `src/phone/App.tsx` — the `request-location` effect case now tries
+  `sdkGeolocate()` first (after the unchanged manual-location and DEV-mock
+  checks); on an empty result it falls through to the pre-existing
+  navigator.geolocation → APPS Bridge logic, extracted verbatim (same
+  comments, same dispatched event shapes, same error-code-to-message
+  mapping) into a new exported helper, `requestLocationViaNavigatorOrBridge`,
+  so it runs as a second-tier fallback and can be tested directly. SDK-
+  acquired fixes dispatch `location-acquired` with `source: 'native'` —
+  reusing the existing tag rather than adding a new one, since the SDK and
+  `navigator.geolocation` are both framed as "native" here.
+- `CHANGELOG.md` — renamed the long-standing `[Unreleased]` header to
+  `[1.9.0] - 2026-06-21` (it held the APPS Bridge / N8 / N2-N3 / bridge-
+  visibility work from the entries below, already committed locally as
+  `v1.9.0` but never given a release header) and added a fresh `[1.10.0] -
+  2026-06-22` entry above it for this session's work.
+- `package.json` / `app.json` — version `1.9.0` → `1.10.0` (SemVer MINOR:
+  new backward-compatible location source, nothing removed or changed for
+  existing callers). `app.json`'s `min_sdk_version` deliberately left at
+  `0.0.10` — the new calls degrade gracefully on older host SDKs (every
+  bridge call is wrapped so a missing/rejecting method falls straight
+  through to the existing chain), so bumping it isn't a hard requirement,
+  just an opportunistic extra source when the host supports it.
+
+**Deliberately not done:**
+- No outer wall-clock race around `sdkGeolocate()` the way `defaultGeolocate`
+  has one around `navigator.geolocation.getCurrentPosition` (that race
+  exists because real G2 hardware has been observed to never fire either
+  `getCurrentPosition` callback). The new SDK call goes through the same
+  bridge channel as `getUserInfo()`/`getDeviceInfo()`, which this codebase
+  already awaits elsewhere without an extra outer timeout, and the SDK call
+  itself takes a `timeoutMs` option — so an extra guard would be unrequested
+  scope creep until/unless real-hardware testing shows the bridge channel
+  has the same hang risk as raw `navigator.geolocation` in this WebView.
+- No glasses-display indicator of which source (SDK vs. navigator vs.
+  bridge) supplied the current position — same reasoning as the equivalent
+  "deliberately not done" item in the APPS Bridge entry below; this is
+  debug-level info and container budget on the glasses is precious.
+
+**Verification:** `tsc -b --noEmit` zero errors; `vitest run` 358/358
+passing across 16 files (up from 336/14 before this session — sdkLocation
+module: +11, effects.test.ts ordering: +5, runEffect.test.ts: +6 = +22);
+`vite build` succeeds.
 
 ---
 

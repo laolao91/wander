@@ -8,7 +8,8 @@
  *
  * All browser APIs are injected via `EffectRunnerDeps` so the runner is
  * unit-testable without a DOM. Defaults wire up `navigator.geolocation`
- * and `window.open` for production use.
+ * and `window.open` for production use, trying the SDK's native location
+ * bridge (sdkLocation.ts) first and falling back to APPS Bridge last.
  */
 
 import { ApiError, fetchPois, fetchRoute, fetchWiki } from './api'
@@ -16,6 +17,7 @@ import type { Poi } from './api'
 import type { Event, Effect } from './state'
 import type { Settings } from './screens/types'
 import { bridgeGeolocate, bridgeWatchPosition } from './appsBridge'
+import { sdkGeolocate, sdkWatchPosition } from './sdkLocation'
 
 export interface EffectRunnerDeps {
   /** Send an event back into the reducer. */
@@ -244,9 +246,19 @@ function readDevMockCoords(): { lat: number; lng: number } | null {
 // always hears back (null → ERROR_LOCATION → user sees retry).
 const GEOLOCATE_WALL_CLOCK_MS = 15000
 
-async function defaultGeolocate(): Promise<{ lat: number; lng: number } | null> {
+export async function defaultGeolocate(): Promise<{ lat: number; lng: number } | null> {
   const mock = readDevMockCoords()
   if (mock) return mock
+  // Even-Realities-native path: the SDK's bridge-backed phone-location API
+  // (added in @evenrealities/even_hub_sdk 0.0.11). Tried first because it
+  // goes through the same native bridge channel as getUserInfo()/
+  // getDeviceInfo() rather than navigator.geolocation's WebView permission
+  // plumbing — it may sidestep the Android permission-forwarding gap, but
+  // this is unconfirmed on real hardware. Never throws; resolves null on
+  // any failure (old host SDK, bridge unavailable, no fix), in which case
+  // we fall through to the navigator.geolocation logic below, unchanged.
+  const sdkFix = await sdkGeolocate()
+  if (sdkFix) return sdkFix
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
     console.warn('[wander][geo] no navigator.geolocation — trying APPS Bridge fallback')
     return bridgeGeolocate()
@@ -294,7 +306,7 @@ function defaultOpenUrl(url: string): void {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 
-function defaultWatchPosition(
+export function defaultWatchPosition(
   onPosition: (lat: number, lng: number, heading?: number | null) => void,
 ): () => void {
   const mock = readDevMockCoords()
@@ -303,9 +315,20 @@ function defaultWatchPosition(
     setTimeout(() => onPosition(mock.lat, mock.lng, null), 0)
     return () => {}
   }
+  // Even-Realities-native path: start the SDK bridge-backed watch
+  // concurrently with whichever source(s) start below — consistent with
+  // this function's existing "concurrent redundant sources, duplicate
+  // updates are harmless" pattern. The cancel function below tears every
+  // started source down.
+  const cancelSdk = sdkWatchPosition(onPosition)
+
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
     console.warn('[wander][geo] no navigator.geolocation — falling back to APPS Bridge watch')
-    return bridgeWatchPosition(onPosition)
+    const cancelBridge = bridgeWatchPosition(onPosition)
+    return () => {
+      cancelSdk()
+      cancelBridge()
+    }
   }
   // Native watch stays registered for the lifetime of the nav session. If
   // it ever reports an error, start the APPS Bridge watch alongside it
@@ -323,6 +346,7 @@ function defaultWatchPosition(
     { enableHighAccuracy: true, maximumAge: 5000 },
   )
   return () => {
+    cancelSdk()
     navigator.geolocation.clearWatch(id)
     bridgeCancel?.()
   }
