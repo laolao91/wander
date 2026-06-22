@@ -1,5 +1,5 @@
-# Wander v1.9 — Session Handoff
-_Updated: 2026-06-22 | Status: v1.10.0 committed locally (`9dbdc61`); EHPK built; **push to GitHub blocked on an expired PAT** (see entry below)_
+# Wander v1.10 — Session Handoff
+_Updated: 2026-06-22 | Status: v1.10.0 committed (`9dbdc61`, `d44bf92`) and pushed to GitHub `main`; EHPK built (`wander-v1.10.0.ehpk`)_
 
 ---
 
@@ -126,6 +126,14 @@ this session to override it, and no workaround was attempted — needs the
 user to regenerate a PAT (or refresh the keychain credential) before
 `git push origin main` can succeed. The commit is otherwise ready to push
 as-is; nothing further needs to change in the working tree.
+
+**Update, same day:** user supplied a freshly generated fine-grained PAT;
+pushed via a one-off `http.extraHeader` (not persisted to disk/keychain) —
+`git push origin main` succeeded, `origin/main` now matches local (`d44bf92`,
+0 ahead/behind). Folder renamed `Wander_v1.9` → `Wander_v1.10` and this file
+renamed `HANDOFF_v1.9.md` → `HANDOFF_v1.10.md` to stop drifting from the
+actual version (`Plugin_Research_v1.9.md` was deliberately left alone — it's
+a dated 2026-06-16 research snapshot, not a current-state doc).
 
 ---
 
