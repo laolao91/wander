@@ -61,6 +61,13 @@ export interface PoiListScreen {
   displayOffset?: number
   /** Highlight cursor — relative to the visible window (0..LIMIT-1 + sentinels). */
   cursorIndex?: number
+  /**
+   * When this list was last fetched from the server, as epoch ms. Drives
+   * the "Refresh nearby" sentinel's relative-time label (e.g. "5 min
+   * ago"). Optional for backward-compat with screen literals that don't
+   * pass it; render falls back to the static label when undefined/null.
+   */
+  lastFetchTs?: number | null
 }
 
 /**
@@ -109,6 +116,13 @@ export interface NavActiveScreen {
   position: { lat: number; lng: number } | null
   /** True once user is within the arrival radius (20m per spec §8). */
   arrived: boolean
+  /**
+   * Compass heading in degrees, from `GeolocationCoordinates.heading`
+   * when the device is moving (null when stationary or unsupported).
+   * Optional for backward-compat with screen literals that don't pass
+   * it; the minimap falls back to null (no heading arrow) when undefined.
+   */
+  heading?: number | null
 }
 
 export interface WikiReadScreen {

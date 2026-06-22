@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react'
 import type { PhoneState, PhoneEvent, ManualLocation } from '../types'
 import type { Poi } from '../../glasses/api'
 import { LocationSearchForm } from '../components/LocationSearchForm'
+import { formatDistance } from '../utils/formatDistance'
 
 // ─── Category display names (API → human label) ───────────────────────────
 
@@ -48,6 +49,10 @@ function groupByCategory(pois: readonly Poi[]): Map<string, Poi[]> {
     map.set(p.category, bucket)
   }
   return map
+}
+
+function mapsUrl(poi: Poi): string {
+  return `https://www.google.com/maps/search/?api=1&query=${poi.lat},${poi.lng}`
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────
@@ -89,7 +94,10 @@ export interface NearbyTabProps {
 export function NearbyTab({ state, dispatch }: NearbyTabProps) {
   const { nearby } = state
 
-  // Auto-refresh when tab first mounts and no data exists yet.
+  // Fire once on first mount, and only if nothing has been fetched yet
+  // (fetchStatus === 'idle'). The empty dep array is intentional: this must
+  // NOT re-run on later fetchStatus transitions, or every refresh/retry
+  // would re-trigger another fetch.
   useEffect(() => {
     if (nearby.fetchStatus === 'idle') {
       dispatch({ type: 'nearby-refresh-requested' })
@@ -106,6 +114,7 @@ export function NearbyTab({ state, dispatch }: NearbyTabProps) {
 
   const [query, setQuery] = useState('')
   const [isChangingLocation, setIsChangingLocation] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   useEffect(() => {
     if (nearby.fetchStatus === 'locating' || nearby.fetchStatus === 'fetching') {
@@ -272,26 +281,66 @@ export function NearbyTab({ state, dispatch }: NearbyTabProps) {
         return (
           <div key={cat} className="px-4">
             <SectionHeader title={label} />
-            {pois.map((poi) => (
-              <ListItem
-                key={poi.id}
-                title={poi.name}
-                subtitle={formatDistance(poi.distanceMiles)}
-                leading={
-                  <span className="text-[18px] w-7 text-center select-none" aria-hidden>
-                    {poi.categoryIcon}
-                  </span>
-                }
-              />
-            ))}
+            {pois.map((poi) => {
+              const isExpanded = expandedId === poi.id
+              return (
+                <div key={poi.id}>
+                  <ListItem
+                    title={poi.name}
+                    subtitle={formatDistance(poi.distanceMiles, state.settings.units)}
+                    onPress={() => setExpandedId(isExpanded ? null : poi.id)}
+                    leading={
+                      <span className="text-[18px] w-7 text-center select-none" aria-hidden>
+                        {poi.categoryIcon}
+                      </span>
+                    }
+                    trailing={
+                      <span className="text-[12px] text-text-dim select-none" aria-hidden>
+                        {isExpanded ? '▾' : '▸'}
+                      </span>
+                    }
+                  />
+                  {isExpanded && (
+                    <div className="px-4 pb-3 pt-1 bg-surface border-t border-border">
+                      {poi.wikiSummary && (
+                        <p className="text-[12px] text-text-dim mb-2">{poi.wikiSummary}</p>
+                      )}
+                      <div className="flex items-center gap-2 text-[12px] text-text-dim mb-2">
+                        <span>~{poi.walkMinutes} min walk</span>
+                        {poi.isOpenNow !== null && (
+                          <span className={poi.isOpenNow ? 'text-green-500' : 'text-red-400'}>
+                            · {poi.isOpenNow ? 'Open now' : 'Closed'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-4">
+                        <a
+                          href={mapsUrl(poi)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[12px] text-accent"
+                        >
+                          Open in Maps
+                        </a>
+                        {poi.websiteUrl && (
+                          <a
+                            href={poi.websiteUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[12px] text-accent"
+                          >
+                            Website
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )
       })}
     </div>
   )
-}
-
-function formatDistance(miles: number): string {
-  if (miles < 0.1) return `${Math.round(miles * 5280)} ft away`
-  return `${miles.toFixed(1)} mi away`
 }

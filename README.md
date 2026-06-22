@@ -67,6 +67,21 @@ The companion app shows nearby POIs grouped by category with live distance, a re
 
 ---
 
+## Android Users: Fixing "Getting your location..." (APPS Bridge)
+
+Some Android phones don't reliably forward GPS permission into the Even Hub app's WebView, which can leave Wander stuck on "Getting your location...". If this happens to you, Wander has an automatic fallback — here's how to enable it:
+
+1. **Install [APPS Bridge](https://gitlab.com/homeauto.cc/appsbridge)** — a free, independent Android companion app (not made by Wander) that gives apps like Wander a reliable way to read your phone's GPS.
+2. **Open APPS Bridge once and turn the bridge on.** Grant it Location permission when it asks.
+3. **Leave it running in the background** — it shows a persistent notification while active and uses negligible battery when idle.
+4. **Reopen Wander.** No settings to change — Wander automatically detects APPS Bridge and uses it *only* if the phone's normal GPS path fails. If your GPS already works fine, nothing changes for you.
+
+When APPS Bridge is actively supplying your location, you'll see a small **🌐 Bridge** badge in Wander's header. Wander never sends anything to or through APPS Bridge beyond a local, on-device connection — your location data never leaves your phone via this path.
+
+APPS Bridge is a separate open-source project; Wander doesn't control its permissions, updates, or availability.
+
+---
+
 ## How It Works
 
 ```
@@ -135,7 +150,7 @@ All endpoints set `Vary: Accept-Language` for correct edge caching.
 | POI data | Wikipedia GeoSearch API + Overpass/OSM |
 | Routing | OpenRouteService foot-walking profile |
 | Minimap | HTML Canvas → PNG → SDK `updateImageRawData` |
-| Tests | Vitest — 267 unit tests |
+| Tests | Vitest — 336 unit tests |
 
 ---
 
@@ -155,6 +170,8 @@ src/glasses/
   effects.ts         # Side-effect runner (GPS, fetch, openUrl)
   bridge.ts          # SDK wiring — boot, event translation, screen push
   minimap.ts         # Canvas minimap geometry + PNG encoding
+  appsBridge.ts      # APPS Bridge WebSocket client — Android GPS fallback
+  geo.ts             # Shared haversine/bearing math
   api.ts             # Typed API client wrappers
   screens/types.ts   # Discriminated union for the 8 screen variants
 
@@ -165,7 +182,8 @@ src/phone/
   storage.ts         # KV store adapter — persists settings + POI cache
   tabs/
     NearbyTab.tsx    # POI list grouped by category, refresh bar, error states
-    SettingsTab.tsx  # Radius slider, category toggles, sync status
+    SettingsTab.tsx  # Radius slider, category toggles, manual location, sync status
+    FavoritesTab.tsx # Saved POIs with live recomputed distance
 ```
 
 ---
@@ -175,7 +193,7 @@ src/phone/
 ```bash
 npm install
 npm run dev        # Vite dev server (http://localhost:5173)
-npm test           # 122 unit tests via Vitest
+npm test           # 336 unit tests via Vitest
 npm run typecheck  # TypeScript strict check
 ```
 

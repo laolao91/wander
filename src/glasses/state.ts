@@ -23,6 +23,7 @@ import type {
 } from './screens/types'
 import { canTransition, DEFAULT_SETTINGS } from './screens/types'
 import { LIST_DISPLAY_LIMIT } from './render'
+import { haversine } from './geo'
 
 // ─── Top-level state ───────────────────────────────────────────────────
 
@@ -34,8 +35,10 @@ export interface AppState {
   poiListHasMore: boolean
   /** Last-known location. Refreshed on every fetch attempt. */
   position: { lat: number; lng: number } | null
+  /** When `poiList` was last fetched from the server, as epoch ms. */
+  lastFetchTs: number | null
   /** Pending refresh result while user is in non-POI_LIST screens. */
-  pendingPoiRefresh: { pois: Poi[]; hasMore: boolean } | null
+  pendingPoiRefresh: { pois: Poi[]; hasMore: boolean; fetchedAt: number | null } | null
   settings: Settings
   favorites: Poi[]
 }
@@ -57,6 +60,7 @@ export const INITIAL_STATE: AppState = {
   poiList: [],
   poiListHasMore: false,
   position: null,
+  lastFetchTs: null,
   pendingPoiRefresh: null,
   settings: DEFAULT_SETTINGS,
   favorites: [],
@@ -96,13 +100,15 @@ export type Event =
        *  'append' concatenates onto the existing list (load-more). */
       mode: 'replace' | 'append'
       isBackgroundRefresh: boolean
+      /** When this page was fetched, as epoch ms — origin: effects.ts. */
+      fetchedAt?: number | null
     }
   | { type: 'pois-failed'; reason: 'location' | 'network' | 'empty' }
   | { type: 'route-loaded'; route: Route }
   | { type: 'route-failed' }
   | { type: 'wiki-loaded'; article: WikiArticle }
   | { type: 'wiki-failed' }
-  | { type: 'position-updated'; lat: number; lng: number }
+  | { type: 'position-updated'; lat: number; lng: number; heading?: number | null }
   | { type: 'settings-changed'; settings: Partial<Settings> }
   | { type: 'retry' }
   | { type: 'favorite-toggled'; poi: Poi }
@@ -142,6 +148,7 @@ export function reduce(state: AppState, event: Event): ReducerResult {
         event.hasMore,
         event.mode,
         event.isBackgroundRefresh,
+        event.fetchedAt ?? null,
       )
 
     case 'pois-failed':
@@ -168,7 +175,7 @@ export function reduce(state: AppState, event: Event): ReducerResult {
       })
 
     case 'position-updated':
-      return onPositionUpdated(state, event.lat, event.lng)
+      return onPositionUpdated(state, event.lat, event.lng, event.heading ?? null)
 
     case 'settings-changed':
       return {
@@ -213,6 +220,7 @@ function onPoisLoaded(
   hasMore: boolean,
   mode: 'replace' | 'append',
   isBackgroundRefresh: boolean,
+  fetchedAt: number | null,
 ): ReducerResult {
   // ─── Append (load-more) ──────────────────────────────────────────────
   // Append-mode is always foreground-initiated by the user tapping "More",
@@ -225,6 +233,7 @@ function onPoisLoaded(
       ...state,
       poiList: merged,
       poiListHasMore: hasMore,
+      lastFetchTs: fetchedAt,
     }
     // Phase E: append-fetch is preceded by goLoading, so the live screen
     // is LOADING (not POI_LIST). Either way, snap the visible window to
@@ -237,6 +246,7 @@ function onPoisLoaded(
         hasMore,
         displayOffset: prevPoiCount,
         cursorIndex: 0,
+        lastFetchTs: fetchedAt,
       })
     }
     return { state: nextState, effects: [] }
@@ -257,7 +267,7 @@ function onPoisLoaded(
   // otherwise hold the new data until they navigate back.
   if (isBackgroundRefresh && state.screen.name !== 'POI_LIST') {
     return {
-      state: { ...state, pendingPoiRefresh: { pois, hasMore } },
+      state: { ...state, pendingPoiRefresh: { pois, hasMore, fetchedAt } },
       effects: [],
     }
   }
@@ -268,8 +278,9 @@ function onPoisLoaded(
       poiList: pois,
       poiListHasMore: hasMore,
       pendingPoiRefresh: null,
+      lastFetchTs: fetchedAt,
     },
-    { name: 'POI_LIST', pois, hasMore, displayOffset: 0, cursorIndex: 0 },
+    { name: 'POI_LIST', pois, hasMore, displayOffset: 0, cursorIndex: 0, lastFetchTs: fetchedAt },
   )
 }
 
@@ -322,6 +333,7 @@ function onRouteLoaded(state: AppState, route: Route): ReducerResult {
         currentStepIndex: 0,
         position: state.position,
         arrived: false,
+        heading: null,
       },
       [{ type: 'start-nav-watch' }],
     )
@@ -348,17 +360,25 @@ function onWikiLoaded(state: AppState, article: WikiArticle): ReducerResult {
   })
 }
 
-function onPositionUpdated(state: AppState, lat: number, lng: number): ReducerResult {
+function onPositionUpdated(
+  state: AppState,
+  lat: number,
+  lng: number,
+  heading: number | null,
+): ReducerResult {
   const position = { lat, lng }
 
   if (state.screen.name === 'NAV_ACTIVE') {
     const screen = state.screen
+    // GPS heading reads null when the device is stationary — keep showing
+    // the last known direction arrow rather than flickering it away.
+    const nextHeading = heading ?? screen.heading ?? null
 
     // Arrival: within 20m of destination → mark arrived, stop GPS watch.
     const distToDest = haversine(lat, lng, screen.destination.lat, screen.destination.lng)
     if (distToDest < 20) {
       return {
-        state: { ...state, position, screen: { ...screen, position, arrived: true } },
+        state: { ...state, position, screen: { ...screen, position, arrived: true, heading: nextHeading } },
         effects: [{ type: 'stop-nav-watch' }],
       }
     }
@@ -381,7 +401,7 @@ function onPositionUpdated(state: AppState, lat: number, lng: number): ReducerRe
       state: {
         ...state,
         position,
-        screen: { ...screen, position, currentStepIndex: nextStepIndex },
+        screen: { ...screen, position, currentStepIndex: nextStepIndex, heading: nextHeading },
       },
       effects: [],
     }
@@ -665,14 +685,16 @@ function applyPendingRefresh(state: AppState): ReducerResult {
   const pending = state.pendingPoiRefresh
   const pois = pending?.pois ?? state.poiList
   const hasMore = pending ? pending.hasMore : state.poiListHasMore
+  const lastFetchTs = pending ? pending.fetchedAt : state.lastFetchTs
   return next(
     {
       ...state,
       poiList: pois,
       poiListHasMore: hasMore,
       pendingPoiRefresh: null,
+      lastFetchTs,
     },
-    { name: 'POI_LIST', pois, hasMore, displayOffset: 0, cursorIndex: 0 },
+    { name: 'POI_LIST', pois, hasMore, displayOffset: 0, cursorIndex: 0, lastFetchTs },
   )
 }
 
@@ -721,13 +743,3 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.min(Math.max(n, lo), hi)
 }
 
-function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371000
-  const toRad = (d: number) => (d * Math.PI) / 180
-  const dLat = toRad(lat2 - lat1)
-  const dLng = toRad(lng2 - lng1)
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)))
-}

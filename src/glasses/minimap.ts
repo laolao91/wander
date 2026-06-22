@@ -27,6 +27,8 @@
  *   the existing black-background + fitBounds fallback is used unchanged.
  */
 
+import { bearing } from './geo'
+
 // In production (EHPK or Vercel-hosted), use the absolute URL just like
 // api.ts does (same WebKit relative-URL restriction applies here).
 const TILE_API_BASE = import.meta.env.DEV
@@ -362,6 +364,13 @@ export interface MinimapInput {
   position: LatLng | null
   /** Direction of travel (0–360°). When null, triangle points up (0°). */
   headingDegrees: number | null
+  /**
+   * Skip the tile fetch and use the plain black-canvas + fitBounds
+   * fallback even when tiles would otherwise be attempted (N3 —
+   * battery-aware degradation, set by bridge.ts below
+   * `LOW_BATTERY_THRESHOLD`). Defaults to false.
+   */
+  skipTiles?: boolean
 }
 
 /** Convert API `[lat, lng]` tuples into structured `LatLng` values. */
@@ -376,13 +385,7 @@ export function geometryAsLatLng(geometry: [number, number][]): LatLng[] {
  * sporadically, especially indoors).
  */
 export function bearingBetween(a: LatLng, b: LatLng): number {
-  const toRad = (d: number) => (d * Math.PI) / 180
-  const dLng = toRad(b.lng - a.lng)
-  const y = Math.sin(dLng) * Math.cos(toRad(b.lat))
-  const x =
-    Math.cos(toRad(a.lat)) * Math.sin(toRad(b.lat)) -
-    Math.sin(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.cos(dLng)
-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360
+  return bearing(a.lat, a.lng, b.lat, b.lng)
 }
 
 // ─── Web Mercator tile math (pure, testable) ───────────────────────────
@@ -676,7 +679,9 @@ export function drawMinimap(
  * Phase 5: attempts to load CARTO dark tiles before drawing so the
  * minimap shows actual street context. Falls back silently to the
  * plain-black + fitBounds path on any tile failure (offline, timeout,
- * CORS issue on unusual WebView builds).
+ * CORS issue on unusual WebView builds) — or unconditionally when
+ * `input.skipTiles` is set (N3 — battery-aware degradation skips the
+ * fetch itself, not just its failure handling).
  */
 export async function encodeMinimapPng(
   input: MinimapInput,
@@ -688,10 +693,11 @@ export async function encodeMinimapPng(
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
 
-  // Attempt to load tile background — non-fatal if it fails.
-  const tileLayer = await loadTileLayer(input, MINIMAP_WIDTH, MINIMAP_HEIGHT).catch(
-    () => null,
-  )
+  // Attempt to load tile background — non-fatal if it fails. Skipped
+  // entirely on low battery (N3) so the fetch itself never happens.
+  const tileLayer = input.skipTiles
+    ? null
+    : await loadTileLayer(input, MINIMAP_WIDTH, MINIMAP_HEIGHT).catch(() => null)
 
   drawMinimap(ctx, input, MINIMAP_WIDTH, MINIMAP_HEIGHT, tileLayer)
 

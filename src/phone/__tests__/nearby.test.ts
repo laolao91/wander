@@ -172,6 +172,21 @@ describe('location-acquired', () => {
     ])
   })
 
+  it('defaults locationSource to native when the event omits it', () => {
+    const result = reduce(locatingState, { type: 'location-acquired', lat: 40.71, lng: -74.0 })
+    expect(nearby(result.state).locationSource).toBe('native')
+  })
+
+  it('records locationSource: bridge when the APPS Bridge fallback supplied the fix', () => {
+    const result = reduce(locatingState, {
+      type: 'location-acquired',
+      lat: 40.71,
+      lng: -74.0,
+      source: 'bridge',
+    })
+    expect(nearby(result.state).locationSource).toBe('bridge')
+  })
+
   it('preserves an existing reverse-geocode label on the location', () => {
     const withLabel: PhoneState = {
       ...INITIAL_STATE,

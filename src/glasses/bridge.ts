@@ -109,6 +109,32 @@ function normalizeEventType(
   return raw === undefined ? OsEventTypeList.CLICK_EVENT : raw
 }
 
+/**
+ * True exactly on a Disconnected → Connected transition (N2 —
+ * device-status reactions). `null` means "not yet known" (the very
+ * first status callback) — not a transition, so no refresh fires on
+ * initial connect, only on actually coming back from a drop.
+ */
+export function isReconnectTransition(
+  prevConnected: boolean | null,
+  connected: boolean,
+): boolean {
+  return prevConnected === false && connected === true
+}
+
+/** Battery percentage below which the minimap skips its tile fetch (N3). */
+export const LOW_BATTERY_THRESHOLD = 20
+
+/**
+ * True when battery is known and below the low-battery threshold (N3 —
+ * battery-aware minimap degradation). Unknown battery (`null`/`undefined`,
+ * e.g. simulator/desktop) is treated as "not low" — degrade only on a
+ * real low reading, never on missing data.
+ */
+export function isLowBattery(batteryLevel: number | null | undefined): boolean {
+  return typeof batteryLevel === 'number' && batteryLevel < LOW_BATTERY_THRESHOLD
+}
+
 export async function initGlasses(): Promise<void> {
   // Boot-step logging — added 2026-04-24 to diagnose §2.1 (boot stuck on
   // LOADING). Once the log capture story (§2.7) is solved, these tags
@@ -117,6 +143,11 @@ export async function initGlasses(): Promise<void> {
   const bridge = await waitForEvenAppBridge()
   console.log('[wander][boot] bridge ready')
   let state: AppState = INITIAL_STATE
+  // N2/N3 — device-status reactions. `wasConnected` starts `null` ("not
+  // yet known") so the very first status callback never counts as a
+  // reconnect; `latestBatteryLevel` feeds the minimap's tile-skip check.
+  let wasConnected: boolean | null = null
+  let latestBatteryLevel: number | null = null
 
   const runner = new EffectRunner({
     dispatch: (event) => dispatch(event),
@@ -160,7 +191,14 @@ export async function initGlasses(): Promise<void> {
     if (favRaw) {
       const parsed = JSON.parse(favRaw) as unknown
       if (Array.isArray(parsed)) {
-        dispatch({ type: 'favorites-loaded', favorites: parsed as import('./api').Poi[] })
+        const favorites = parsed.filter(
+          (x): x is import('./api').Poi =>
+            typeof x === 'object' &&
+            x !== null &&
+            typeof (x as Record<string, unknown>).id === 'string' &&
+            typeof (x as Record<string, unknown>).name === 'string',
+        )
+        dispatch({ type: 'favorites-loaded', favorites })
       }
     }
   } catch {
@@ -192,13 +230,22 @@ export async function initGlasses(): Promise<void> {
   // show a connection dot in the header without needing a direct reference
   // to the bridge. The phone listens for 'wander-g2-status'.
   const unsubscribeStatus = bridge.onDeviceStatusChanged((status: DeviceStatus) => {
+    const connected = status.isConnected()
+    latestBatteryLevel = status.batteryLevel ?? null
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('wander-g2-status', {
-          detail: { connected: status.isConnected() },
+          detail: { connected },
         }),
       )
     }
+    // N2: refresh POIs automatically on reconnect so a list left stale
+    // by the drop doesn't linger silently.
+    if (isReconnectTransition(wasConnected, connected)) {
+      console.log('[wander][status] reconnected — refreshing POIs')
+      void runner.backgroundRefresh()
+    }
+    wasConnected = connected
   })
 
   // Phone settings → glasses reducer.
@@ -261,7 +308,7 @@ export async function initGlasses(): Promise<void> {
       // (entry rebuild, position updates, arrival), so the user-position
       // triangle stays in sync with whatever the body text is showing.
       if (state.screen.name === 'NAV_ACTIVE') {
-        void pushMinimap(bridge, state.screen)
+        void pushMinimap(bridge, state.screen, isLowBattery(latestBatteryLevel))
       }
     }
 
@@ -311,12 +358,14 @@ function pushScreen(
 async function pushMinimap(
   bridge: Pick<EvenAppBridge, 'updateImageRawData'>,
   screen: Extract<AppState['screen'], { name: 'NAV_ACTIVE' }>,
+  skipTiles = false,
 ): Promise<void> {
   const input: MinimapInput = {
     geometry: screen.route.geometry,
     destination: { lat: screen.destination.lat, lng: screen.destination.lng },
     position: screen.position,
-    headingDegrees: null,
+    headingDegrees: screen.heading ?? null,
+    skipTiles,
   }
   try {
     const png = await encodeMinimapPng(input)

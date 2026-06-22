@@ -12,8 +12,8 @@
   "permissions": [
     {
       "name": "network",
-      "desc": "Fetch nearby points of interest and Wikipedia summaries from the Wander API",
-      "whitelist": ["https://wander-six-phi.vercel.app", "https://react.dev"]
+      "desc": "Fetch nearby points of interest and Wikipedia summaries from the Wander API. Also connects to the optional APPS Bridge Android app at 127.0.0.1 (loopback only, never leaves the device) as a GPS fallback if device location isn't available to the WebView.",
+      "whitelist": ["https://wander-six-phi.vercel.app", "https://react.dev", "ws://127.0.0.1:7071"]
     },
     {
       "name": "location",

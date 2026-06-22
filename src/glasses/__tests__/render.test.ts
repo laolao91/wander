@@ -5,12 +5,14 @@ import {
   bearingToArrow,
   bearingToCardinal,
   etaMinutes,
+  remainingDistanceMeters,
   ID_MAIN,
   ID_BODY,
   ID_LIST,
 } from '../render'
 import type { Poi, Route } from '../api'
 import type { Screen } from '../screens/types'
+import { haversine } from '../geo'
 
 // ─── Fixtures ──────────────────────────────────────────────────────────
 
@@ -496,6 +498,90 @@ describe('renderScreen NAV_ACTIVE', () => {
     })
     // Imperial display: anything ≥ 0.1 mi shows as "N.NN mi"
     expect(out.textObject?.[1].content).toMatch(/\d+\.\d{2} mi/)
+  })
+})
+
+// ─── remainingDistanceMeters (N8 — route-aware ETA distance) ──────────
+
+describe('remainingDistanceMeters', () => {
+  // Realistic shape: only the final step has endPoint: null (api/route.ts
+  // only nulls it out when ORS's way_points index falls outside the
+  // geometry — i.e. the last step). Non-final steps carry a real endPoint.
+  const realisticRoute: Route = {
+    totalDistanceMeters: 480,
+    totalDurationSeconds: 360,
+    steps: [
+      {
+        instruction: 'Head north on 5th Ave',
+        distanceMeters: 200,
+        durationSeconds: 150,
+        maneuverType: 'depart',
+        street: '5th Ave',
+        endPoint: [40.7700, -73.9683], // same lng as start, 200m north
+      },
+      {
+        instruction: 'Turn left onto 86th St',
+        distanceMeters: 280,
+        durationSeconds: 210,
+        maneuverType: 'turn-left',
+        street: '86th St',
+        endPoint: null, // final "arrive" step — falls back to destination
+      },
+    ],
+    geometry: [],
+    language: 'en',
+  }
+  const dest = makePoi({ lat: 40.7851, lng: -73.9683 })
+
+  it('on a non-final step, sums live distance to the step end-point plus later steps', () => {
+    const screen: Extract<Screen, { name: 'NAV_ACTIVE' }> = {
+      name: 'NAV_ACTIVE',
+      destination: dest,
+      route: realisticRoute,
+      currentStepIndex: 0,
+      position: { lat: 40.7700, lng: -73.9683 }, // already at step 0's endPoint
+      arrived: false,
+    }
+    // At the step-0 endpoint exactly: live leg ≈ 0, plus step 1's 280m.
+    expect(remainingDistanceMeters(screen)).toBeCloseTo(280, 0)
+  })
+
+  it('on the final step (no endPoint), equals a direct haversine to the destination', () => {
+    const screen: Extract<Screen, { name: 'NAV_ACTIVE' }> = {
+      name: 'NAV_ACTIVE',
+      destination: dest,
+      route: realisticRoute,
+      currentStepIndex: 1,
+      position: { lat: 40.7700, lng: -73.9683 },
+      arrived: false,
+    }
+    // No steps after index 1, so this collapses to plain haversine —
+    // verified independently against the geo module, not the function
+    // under test.
+    expect(remainingDistanceMeters(screen)).toBeCloseTo(
+      haversine(40.7700, -73.9683, dest.lat, dest.lng),
+      0,
+    )
+  })
+
+  it('does not double-count at the start of the route: ≈ total route distance, not total + later steps', () => {
+    // ~200m south of step 0's endpoint — i.e. roughly where the route
+    // starts, matching step 0's own 200m distanceMeters.
+    const screen: Extract<Screen, { name: 'NAV_ACTIVE' }> = {
+      name: 'NAV_ACTIVE',
+      destination: dest,
+      route: realisticRoute,
+      currentStepIndex: 0,
+      position: { lat: 40.7682, lng: -73.9683 },
+      arrived: false,
+    }
+    // Old straight-line-to-destination behavior, by contrast, would
+    // already be most of the way to 480 here too — the real regression
+    // case is the inflated double-count this guards against: if the
+    // live leg ever fell back to the destination *and* later-step
+    // distances were added on top, this would read ~760m instead.
+    expect(remainingDistanceMeters(screen)).toBeCloseTo(realisticRoute.totalDistanceMeters, -1)
+    expect(remainingDistanceMeters(screen)).toBeLessThan(600)
   })
 })
 

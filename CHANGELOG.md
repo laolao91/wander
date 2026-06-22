@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Added an APPS Bridge fallback for GPS on Android (`src/glasses/appsBridge.ts`).
+When `navigator.geolocation` fails, times out, or is unavailable, Wander now
+tries the optional third-party "APPS Bridge" Android companion app
+(`ws://127.0.0.1:7071`) before giving up — this routes around the long-standing
+host-WebView permission-forwarding bug independently of Even Realities fixing
+it. Native geolocation remains the primary path everywhere; the bridge is
+purely a fallback, and behavior is unchanged when it isn't installed/running.
+Added `"ws://127.0.0.1:7071"` to `app.json`'s `network` permission whitelist
+as a defensive measure (unconfirmed whether Even Hub enforces this for
+WebSocket at runtime — see HANDOFF_v1.9.md for the open on-device test). Also
+extended the `network` permission's `desc` to explain the loopback entry to
+reviewers, and added a phone-side transparency badge ("🌐 Bridge") plus a
+Settings hint pointing Android users at APPS Bridge when native GPS fails.
+
+Route-aware nav ETA (`remainingDistanceMeters` in `src/glasses/render.ts`):
+remaining distance now sums the live leg to the current route step's
+end-point plus every later step's own distance, instead of a straight-line
+haversine to the destination — fixes the ETA visibly jumping when rounding a
+corner.
+
+Device-status reactions in `src/glasses/bridge.ts`: POIs now auto-refresh on
+a glasses reconnect (`isReconnectTransition`), and the NAV_ACTIVE minimap
+skips its street-tile fetch entirely below 20% battery (`isLowBattery`),
+falling back to the existing plain-black + fitBounds rendering.
+
 ## [1.2.0] - 2026-05-02
 
 Navigation and UX overhaul. Double-tap now goes back to the previous screen

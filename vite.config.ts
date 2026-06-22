@@ -23,9 +23,15 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: {
-        // even-toolkit marks react-router as optional peer dep, causing Vite 8
-        // (Rolldown) to stub it. Override to use the real installed package.
+        // even-toolkit marks these as optional peer deps, causing Vite 8
+        // (Rolldown) to stub them out. Override to use the real installed
+        // packages — even-toolkit's bundled components import all four
+        // directly (cva, clsx, tailwind-merge for class names; react-router
+        // for navigation), so the stubs break the production build.
         '__vite-optional-peer-dep:react-router:even-toolkit': path.resolve('./node_modules/react-router'),
+        '__vite-optional-peer-dep:class-variance-authority:even-toolkit': path.resolve('./node_modules/class-variance-authority'),
+        '__vite-optional-peer-dep:clsx:even-toolkit': path.resolve('./node_modules/clsx'),
+        '__vite-optional-peer-dep:tailwind-merge:even-toolkit': path.resolve('./node_modules/tailwind-merge'),
       },
     },
     server: {

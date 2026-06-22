@@ -37,6 +37,7 @@ import type { KVStore } from './storage'
 import type { PhoneEvent, PhoneEffect, PhoneState } from './types'
 import { categoryIdsToCategories } from './types'
 import { fetchPois } from '../glasses/api'
+import { bridgeGeolocate } from '../glasses/appsBridge'
 import { SettingsTab } from './tabs/SettingsTab'
 import { NearbyTab } from './tabs/NearbyTab'
 import { FavoritesTab } from './tabs/FavoritesTab'
@@ -123,7 +124,7 @@ function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void
     case 'request-location': {
       // Manual location short-circuit: skip GPS when a manual location is set.
       if (effect.manualLocation) {
-        dispatch({ type: 'location-acquired', lat: effect.manualLocation.lat, lng: effect.manualLocation.lng })
+        dispatch({ type: 'location-acquired', lat: effect.manualLocation.lat, lng: effect.manualLocation.lng, source: 'manual' })
         return
       }
       // Dev simulator mock — reads VITE_MOCK_LAT/LNG from .env.local.
@@ -132,12 +133,22 @@ function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void
         const mockLat = parseFloat(import.meta.env.VITE_MOCK_LAT ?? '')
         const mockLng = parseFloat(import.meta.env.VITE_MOCK_LNG ?? '')
         if (!isNaN(mockLat) && !isNaN(mockLng)) {
-          dispatch({ type: 'location-acquired', lat: mockLat, lng: mockLng })
+          dispatch({ type: 'location-acquired', lat: mockLat, lng: mockLng, source: 'native' })
           return
         }
       }
       if (!navigator.geolocation) {
-        dispatch({ type: 'location-failed', message: 'Geolocation not supported on this device.' })
+        // No native geolocation at all — try APPS Bridge (the Android
+        // companion app) before giving up. Resolves null if it isn't
+        // installed/running, in which case we fall through to the same
+        // failure message as before.
+        bridgeGeolocate().then((fix) => {
+          if (fix) {
+            dispatch({ type: 'location-acquired', lat: fix.lat, lng: fix.lng, source: 'bridge' })
+            return
+          }
+          dispatch({ type: 'location-failed', message: 'Geolocation not supported on this device.' })
+        })
         return
       }
       navigator.geolocation.getCurrentPosition(
@@ -146,6 +157,7 @@ function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void
             type: 'location-acquired',
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
+            source: 'native',
           })
         },
         (err) => {
@@ -155,16 +167,26 @@ function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void
           // doesn't always forward the host app's location permission into the
           // WebView context. Production installs (via EvenHub store) resolve
           // this. Code 2/3 are genuine device/timeout failures.
-          let message: string
-          if (err.code === 1 /* PERMISSION_DENIED */) {
-            message =
-              'Location permission is required. If you\'ve already granted it, try force-quitting and reopening the app.'
-          } else if (err.code === 2 /* POSITION_UNAVAILABLE */) {
-            message = 'Your location couldn\'t be determined. Make sure location services are enabled.'
-          } else {
-            message = 'Location request timed out. Check your location settings and try again.'
-          }
-          dispatch({ type: 'location-failed', message })
+          //
+          // Before surfacing a failure, try APPS Bridge — if the user has it
+          // installed and running, it sources GPS straight from Android,
+          // independent of the host WebView's permission forwarding.
+          bridgeGeolocate().then((fix) => {
+            if (fix) {
+              dispatch({ type: 'location-acquired', lat: fix.lat, lng: fix.lng, source: 'bridge' })
+              return
+            }
+            let message: string
+            if (err.code === 1 /* PERMISSION_DENIED */) {
+              message =
+                'Location permission is required. If you\'ve already granted it, try force-quitting and reopening the app.'
+            } else if (err.code === 2 /* POSITION_UNAVAILABLE */) {
+              message = 'Your location couldn\'t be determined. Make sure location services are enabled.'
+            } else {
+              message = 'Location request timed out. Check your location settings and try again.'
+            }
+            dispatch({ type: 'location-failed', message })
+          })
         },
         { timeout: 10_000, maximumAge: 30_000 },
       )
@@ -231,7 +253,16 @@ export function App() {
         if (raw) {
           try {
             const parsed = JSON.parse(raw) as unknown
-            if (Array.isArray(parsed)) setFavorites(parsed as Poi[])
+            if (Array.isArray(parsed)) {
+              const favs = parsed.filter(
+                (x): x is Poi =>
+                  typeof x === 'object' &&
+                  x !== null &&
+                  typeof (x as Record<string, unknown>).id === 'string' &&
+                  typeof (x as Record<string, unknown>).name === 'string',
+              )
+              setFavorites(favs)
+            }
           } catch {
             // Ignore corrupt data.
           }
@@ -286,6 +317,15 @@ export function App() {
 
   const tabTitle = tab === 'nearby' ? 'Nearby' : tab === 'settings' ? 'Settings' : 'Saved'
 
+  // Header right-side badges are mutually exclusive with "Manual" (a
+  // manual-location fix always reports locationSource: 'manual', never
+  // 'bridge') but the Bridge badge and the GPS location label can show
+  // together — both describe the same non-manual fix from two angles.
+  const showManualBadge = phoneState.settings.manualLocation !== null
+  const showBridgeBadge = phoneState.nearby.locationSource === 'bridge' && !showManualBadge
+  const showLocationLabel = tab === 'nearby' && phoneState.nearby.location !== null && !showManualBadge
+  const showHeaderRightGroup = showManualBadge || showBridgeBadge || showLocationLabel
+
   return (
     <div className="flex flex-col h-screen w-full overflow-hidden bg-bg">
 
@@ -303,15 +343,27 @@ export function App() {
           <span className="text-[15px] text-text leading-none font-normal">{tabTitle}</span>
 
           {/* Manual location badge — all tabs when override is active */}
-          {phoneState.settings.manualLocation && (
+          {showManualBadge && (
             <span className="ml-auto text-[11px] font-semibold text-yellow-400 bg-yellow-400/10 px-1.5 py-0.5 rounded shrink-0">
               📍 Manual
             </span>
           )}
-          {/* Location label — Nearby tab, GPS mode only */}
-          {tab === 'nearby' && phoneState.nearby.location && !phoneState.settings.manualLocation && (
-            <span className="ml-auto text-[11px] text-text-dim truncate">
-              {phoneState.nearby.location.label ?? 'Near you'}
+          {/* Bridge badge + location label — non-manual fixes; both can show together */}
+          {!showManualBadge && (showBridgeBadge || showLocationLabel) && (
+            <span className="ml-auto flex items-center gap-1.5 min-w-0">
+              {showBridgeBadge && (
+                <span
+                  className="text-[11px] font-semibold text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded shrink-0"
+                  title="Native GPS was unavailable — using the APPS Bridge Android app for location"
+                >
+                  🌐 Bridge
+                </span>
+              )}
+              {showLocationLabel && (
+                <span className="text-[11px] text-text-dim truncate">
+                  {phoneState.nearby.location?.label ?? 'Near you'}
+                </span>
+              )}
             </span>
           )}
 
@@ -319,7 +371,7 @@ export function App() {
           <span
             className={[
               'shrink-0 w-2 h-2 rounded-full',
-              !phoneState.settings.manualLocation && !(tab === 'nearby' && phoneState.nearby.location) ? 'ml-auto' : '',
+              !showHeaderRightGroup ? 'ml-auto' : '',
               g2Connected === null
                 ? 'bg-text-dim opacity-40'
                 : g2Connected
@@ -337,6 +389,13 @@ export function App() {
         </div>
       </div>
 
+      {/* ── Disconnect banner — more prominent than the header dot alone ── */}
+      {g2Connected === false && (
+        <div className="shrink-0 px-4 py-1.5 bg-yellow-500/10 border-b border-yellow-500/20 text-center">
+          <span className="text-[11px] text-yellow-500">⚠ Glasses disconnected — navigation paused</span>
+        </div>
+      )}
+
       {/* ── Scrollable content — full width ── */}
       <div className="flex-1 min-h-0 overflow-y-auto w-full">
         {tab === 'nearby' ? (
@@ -344,7 +403,13 @@ export function App() {
         ) : tab === 'settings' ? (
           <SettingsTab state={phoneState} dispatch={dispatch} />
         ) : (
-          <FavoritesTab favorites={favorites} />
+          <FavoritesTab
+            favorites={favorites}
+            units={phoneState.settings.units}
+            userLocation={
+              phoneState.settings.manualLocation ?? phoneState.nearby.location
+            }
+          />
         )}
       </div>
 

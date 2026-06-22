@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { translateGlassesEvent, _resetBridgeEventState } from '../bridge'
+import {
+  translateGlassesEvent,
+  _resetBridgeEventState,
+  isReconnectTransition,
+  isLowBattery,
+  LOW_BATTERY_THRESHOLD,
+} from '../bridge'
 import { INITIAL_STATE, type AppState, type Event } from '../state'
 import {
   List_ItemEvent,
@@ -402,5 +408,47 @@ describe('manual back-tap detector', () => {
     translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
     expect(dispatch).toHaveBeenCalledWith({ type: 'tap' })
     expect(dispatch).not.toHaveBeenCalledWith({ type: 'back' })
+  })
+})
+
+// ─── isReconnectTransition (N2 — device-status reactions) ─────────────
+
+describe('isReconnectTransition', () => {
+  it('true on a false → true transition', () => {
+    expect(isReconnectTransition(false, true)).toBe(true)
+  })
+
+  it('false when already connected (true → true)', () => {
+    expect(isReconnectTransition(true, true)).toBe(false)
+  })
+
+  it('false when going disconnected (true → false)', () => {
+    expect(isReconnectTransition(true, false)).toBe(false)
+  })
+
+  it('false on the very first callback (null → true) — not a reconnect', () => {
+    expect(isReconnectTransition(null, true)).toBe(false)
+  })
+
+  it('false staying disconnected (false → false)', () => {
+    expect(isReconnectTransition(false, false)).toBe(false)
+  })
+})
+
+// ─── isLowBattery (N3 — battery-aware minimap degradation) ────────────
+
+describe('isLowBattery', () => {
+  it('true below the threshold', () => {
+    expect(isLowBattery(LOW_BATTERY_THRESHOLD - 1)).toBe(true)
+  })
+
+  it('false at or above the threshold', () => {
+    expect(isLowBattery(LOW_BATTERY_THRESHOLD)).toBe(false)
+    expect(isLowBattery(100)).toBe(false)
+  })
+
+  it('false when battery is unknown (null/undefined) — never degrade on missing data', () => {
+    expect(isLowBattery(null)).toBe(false)
+    expect(isLowBattery(undefined)).toBe(false)
   })
 })

@@ -157,6 +157,23 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
             />
           </div>
         )}
+
+        {/* Android GPS troubleshooting hint — independent of manual-location
+            state, since this is about the GPS path itself. */}
+        <div className="px-3 py-2 border-t border-border">
+          <p className="text-[11px] text-text-dim">
+            Android location not working? Wander automatically falls back to{' '}
+            <a
+              href="https://gitlab.com/homeauto.cc/appsbridge"
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent"
+            >
+              APPS Bridge
+            </a>
+            {' '}— a free companion app — when the phone's own GPS isn't reachable.
+          </p>
+        </div>
       </SettingsGroup>
 
       {/* ── Search Radius ── */}

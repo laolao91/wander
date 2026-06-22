@@ -189,6 +189,13 @@ export interface NearbyState {
   lastFetchTs: number | null
   /** Non-null when fetchStatus is error-location or error-network. */
   errorMessage: string | null
+  /**
+   * Where the current `location` fix came from. `'bridge'` means native
+   * geolocation failed and the APPS Bridge fallback supplied it instead —
+   * drives a small transparency badge in the header. Null before the
+   * first fix (or for the manual-location path, which has its own badge).
+   */
+  locationSource: 'native' | 'bridge' | 'manual' | null
 }
 
 export const INITIAL_NEARBY_STATE: NearbyState = {
@@ -197,6 +204,7 @@ export const INITIAL_NEARBY_STATE: NearbyState = {
   pois: [],
   lastFetchTs: null,
   errorMessage: null,
+  locationSource: null,
 }
 
 // ─── Top-level phone state ─────────────────────────────────────────────────
@@ -248,7 +256,7 @@ export type PhoneEvent =
   /** User tapped ↺ Refresh or the tab became visible for the first time. */
   | { type: 'nearby-refresh-requested' }
   /** Geolocation succeeded — triggers the POI fetch. */
-  | { type: 'location-acquired'; lat: number; lng: number }
+  | { type: 'location-acquired'; lat: number; lng: number; source?: 'native' | 'bridge' | 'manual' }
   /** Geolocation failed (permission denied, timeout, etc.). */
   | { type: 'location-failed'; message: string }
   /** Reverse-geocode label arrived (Phase I session 2). */

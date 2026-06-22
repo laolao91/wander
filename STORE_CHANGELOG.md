@@ -1,9 +1,8 @@
-v1.7 — Step navigation, opening hours, and more.
+v1.9 — Manual location, smarter navigation, more reliable Android GPS.
 
-• NAV now advances steps as you walk and detects arrival
-• Shows Open/Closed status for restaurants, parks, and shops
-• Imperial or metric distances (Settings → Display)
-• Save places with ★ Save; view them in the new Saved tab
-• Filter the Nearby list by name
-• Sort results by name or proximity
-• Choose 10, 15, or 20 max results per search
+• Set a manual location in Settings when GPS struggles
+• Android GPS fallback via the free APPS Bridge companion app
+• Tap a place in Nearby for hours, Wikipedia info, and map links
+• Nav heading arrow and ETA now follow your actual route
+• Live, accurate distances in Saved places
+• Glasses auto-refresh nearby places after reconnecting

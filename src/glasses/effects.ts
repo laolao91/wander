@@ -15,6 +15,7 @@ import { ApiError, fetchPois, fetchRoute, fetchWiki } from './api'
 import type { Poi } from './api'
 import type { Event, Effect } from './state'
 import type { Settings } from './screens/types'
+import { bridgeGeolocate, bridgeWatchPosition } from './appsBridge'
 
 export interface EffectRunnerDeps {
   /** Send an event back into the reducer. */
@@ -27,7 +28,7 @@ export interface EffectRunnerDeps {
   openUrl?: (url: string) => void
   /** Continuous GPS watch; returns a cancel function. */
   watchPosition?: (
-    onPosition: (lat: number, lng: number) => void,
+    onPosition: (lat: number, lng: number, heading?: number | null) => void,
   ) => () => void
   /** Tear down the page container and exit the app (CONFIRM_EXIT → "Yes"). */
   exitApp?: () => void
@@ -153,6 +154,7 @@ export class EffectRunner {
         hasMore: page.hasMore,
         mode,
         isBackgroundRefresh,
+        fetchedAt: Date.now(),
       })
     } catch (err) {
       console.warn('[wander][fetch] failed', err)
@@ -193,8 +195,8 @@ export class EffectRunner {
 
   private startNavWatch(): void {
     this.stopNavWatch()
-    this.cancelNavWatch = this.deps.watchPosition((lat, lng) => {
-      this.deps.dispatch({ type: 'position-updated', lat, lng })
+    this.cancelNavWatch = this.deps.watchPosition((lat, lng, heading) => {
+      this.deps.dispatch({ type: 'position-updated', lat, lng, heading: heading ?? null })
     })
   }
 
@@ -242,12 +244,12 @@ function readDevMockCoords(): { lat: number; lng: number } | null {
 // always hears back (null → ERROR_LOCATION → user sees retry).
 const GEOLOCATE_WALL_CLOCK_MS = 15000
 
-function defaultGeolocate(): Promise<{ lat: number; lng: number } | null> {
+async function defaultGeolocate(): Promise<{ lat: number; lng: number } | null> {
   const mock = readDevMockCoords()
-  if (mock) return Promise.resolve(mock)
+  if (mock) return mock
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
-    console.warn('[wander][geo] no navigator.geolocation — resolving null')
-    return Promise.resolve(null)
+    console.warn('[wander][geo] no navigator.geolocation — trying APPS Bridge fallback')
+    return bridgeGeolocate()
   }
   console.log('[wander][geo] getCurrentPosition start')
   const gps = new Promise<{ lat: number; lng: number } | null>((resolve) => {
@@ -269,7 +271,13 @@ function defaultGeolocate(): Promise<{ lat: number; lng: number } | null> {
       resolve(null)
     }, GEOLOCATE_WALL_CLOCK_MS),
   )
-  return Promise.race([gps, wallClock])
+  const native = await Promise.race([gps, wallClock])
+  if (native) return native
+  // Native geolocation failed/unavailable/timed out — APPS Bridge (if the
+  // user has it installed and running) sources GPS straight from Android,
+  // bypassing the host WebView's permission forwarding entirely.
+  console.warn('[wander][geo] native failed — trying APPS Bridge fallback')
+  return bridgeGeolocate()
 }
 
 function defaultOpenUrl(url: string): void {
@@ -287,21 +295,35 @@ function defaultOpenUrl(url: string): void {
 }
 
 function defaultWatchPosition(
-  onPosition: (lat: number, lng: number) => void,
+  onPosition: (lat: number, lng: number, heading?: number | null) => void,
 ): () => void {
   const mock = readDevMockCoords()
   if (mock) {
     // Fire once immediately so NAV_ACTIVE gets a position on first paint.
-    setTimeout(() => onPosition(mock.lat, mock.lng), 0)
+    setTimeout(() => onPosition(mock.lat, mock.lng, null), 0)
     return () => {}
   }
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
-    return () => {}
+    console.warn('[wander][geo] no navigator.geolocation — falling back to APPS Bridge watch')
+    return bridgeWatchPosition(onPosition)
   }
+  // Native watch stays registered for the lifetime of the nav session. If
+  // it ever reports an error, start the APPS Bridge watch alongside it
+  // (guarded so we only start it once) rather than tearing native down —
+  // native may recover on its own, and a stray duplicate position update
+  // from either source is harmless.
+  let bridgeCancel: (() => void) | null = null
   const id = navigator.geolocation.watchPosition(
-    (p) => onPosition(p.coords.latitude, p.coords.longitude),
-    () => {},
+    (p) => onPosition(p.coords.latitude, p.coords.longitude, p.coords.heading ?? null),
+    (err) => {
+      if (bridgeCancel) return
+      console.warn('[wander][geo] watchPosition error', err.code, '— falling back to APPS Bridge')
+      bridgeCancel = bridgeWatchPosition(onPosition)
+    },
     { enableHighAccuracy: true, maximumAge: 5000 },
   )
-  return () => navigator.geolocation.clearWatch(id)
+  return () => {
+    navigator.geolocation.clearWatch(id)
+    bridgeCancel?.()
+  }
 }

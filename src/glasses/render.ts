@@ -19,6 +19,7 @@ import {
 import type { Poi } from './api'
 import type { Screen, PoiDetailAction } from './screens/types'
 import { MINIMAP_HEIGHT, MINIMAP_WIDTH } from './minimap'
+import { haversine, bearing } from './geo'
 
 // ─── Display constants (G2 hardware) ───────────────────────────────────
 
@@ -106,6 +107,7 @@ const LOADING_RULE = '─'.repeat(9)
 export function renderScreen(
   screen: Screen,
   units: 'imperial' | 'metric' = 'imperial',
+  now: number = Date.now(),
 ): RebuildPageContainer {
   switch (screen.name) {
     case 'LOADING':
@@ -118,6 +120,8 @@ export function renderScreen(
         screen.displayOffset ?? 0,
         screen.cursorIndex ?? 0,
         units,
+        screen.lastFetchTs ?? null,
+        now,
       )
 
     case 'POI_DETAIL':
@@ -239,6 +243,8 @@ function renderPoiList(
   displayOffset: number,
   cursorIndex: number,
   units: 'imperial' | 'metric',
+  lastFetchTs: number | null,
+  now: number,
 ): RebuildPageContainer {
   // Phase G (2026-04-26): show a sliding window of `pois` starting at
   // `displayOffset`. Sentinels:
@@ -265,7 +271,7 @@ function renderPoiList(
     items.push(sentinelLine('▼ More results', moreIdx === cursorIndex))
   }
   const refreshIdx = moreIdx + (showMore ? 1 : 0)
-  items.push(sentinelLine('↻ Refresh nearby', refreshIdx === cursorIndex))
+  items.push(sentinelLine(refreshSentinelLabel(lastFetchTs, now), refreshIdx === cursorIndex))
   return new RebuildPageContainer({
     containerTotalNum: 1,
     listObject: [
@@ -290,6 +296,14 @@ function renderPoiList(
       }),
     ],
   })
+}
+
+function refreshSentinelLabel(lastFetchTs: number | null, now: number): string {
+  if (lastFetchTs === null) return '↻ Refresh nearby'
+  const mins = Math.floor((now - lastFetchTs) / 60_000)
+  if (mins < 1) return '↻ Refresh (just now)'
+  if (mins === 1) return '↻ Refresh (1 min ago)'
+  return `↻ Refresh (${mins} min ago)`
 }
 
 function sentinelLine(label: string, isCursor: boolean): string {
@@ -446,7 +460,7 @@ const ACTION_LABEL: Record<PoiDetailAction, string> = {
   'favorite-remove': '★ Saved',
   // 'close' dismisses the action menu and returns to the POI detail view.
   // 'back' exits the detail entirely and returns to the POI list.
-  close: '← Back',
+  close: '← Close menu',
   back: 'Back to List',
 }
 
@@ -616,7 +630,12 @@ function renderWikiRead(
 }
 
 function wikiHeaderText(title: string, pageIndex: number, total: number): string {
-  return `${truncate(title, CHARS_PER_LINE - 8)}  ${pageIndex + 1}/${total}`
+  // Scroll-up/down at the first/last page is a no-op (see onCursorMove in
+  // state.ts) — these markers tell the reader whether there's anywhere
+  // left to scroll before they try.
+  const prev = pageIndex > 0 ? '◄' : ' '
+  const next = pageIndex < total - 1 ? '►' : ' '
+  return `${truncate(title, CHARS_PER_LINE - 8)}  ${prev}${pageIndex + 1}/${total}${next}`
 }
 
 function wikiBodyText(pages: string[], pageIndex: number): string {
@@ -732,36 +751,47 @@ function formatMeters(m: number, units: 'imperial' | 'metric'): string {
 // ─── Navigation math (text-only NAV_ACTIVE) ────────────────────────────
 
 /**
- * Distance from current position to destination via the great-circle
- * formula (haversine). Used for the "X m / X km" display.
+ * Remaining walking distance: live distance to the *current step's*
+ * end-point, plus the route's own distance for every step after it.
+ * Route-aware rather than straight-line-to-destination (N8) — a
+ * straight haversine to the destination cuts through buildings/blocks
+ * and visibly jumps as the user rounds a corner; following the route's
+ * own per-step distances tracks what the user is actually walking.
+ * Falls back to the destination for the final step (its `endPoint` is
+ * null — same fallback `headingToNextPoint` uses), which collapses to
+ * the old straight-line behavior exactly when it's the only leg left.
  */
-function remainingDistanceMeters(
+export function remainingDistanceMeters(
   screen: Extract<Screen, { name: 'NAV_ACTIVE' }>,
 ): number {
   if (!screen.position) return screen.route.totalDistanceMeters
-  return haversine(
-    screen.position.lat,
-    screen.position.lng,
-    screen.destination.lat,
-    screen.destination.lng,
-  )
+  const { route, currentStepIndex, position, destination } = screen
+  const step = route.steps[currentStepIndex]
+  const [targetLat, targetLng] = step?.endPoint ?? [destination.lat, destination.lng]
+  const liveLegMeters = haversine(position.lat, position.lng, targetLat, targetLng)
+  let laterStepsMeters = 0
+  for (let i = currentStepIndex + 1; i < route.steps.length; i++) {
+    laterStepsMeters += route.steps[i].distanceMeters
+  }
+  return liveLegMeters + laterStepsMeters
 }
 
 /**
- * Bearing from current position to destination. The minimap (Phase 3
- * final) will use the next route waypoint instead; for the text-only
- * version this gives the user a usable "you're heading roughly →".
+ * Bearing from current position toward the current route step's
+ * end-point. Falls back to the destination when the step has no
+ * `endPoint` (e.g. the final "arrive" step) so the arrow still points
+ * somewhere useful rather than going stale.
  */
 function headingToNextPoint(
   screen: Extract<Screen, { name: 'NAV_ACTIVE' }>,
 ): number | null {
   if (!screen.position) return null
-  return bearing(
-    screen.position.lat,
-    screen.position.lng,
+  const step = screen.route.steps[screen.currentStepIndex]
+  const [targetLat, targetLng] = step?.endPoint ?? [
     screen.destination.lat,
     screen.destination.lng,
-  )
+  ]
+  return bearing(screen.position.lat, screen.position.lng, targetLat, targetLng)
 }
 
 const ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖']
@@ -787,23 +817,3 @@ export function bearingToCardinal(deg: number): string {
   return CARDINALS[sector]
 }
 
-function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371000
-  const toRad = (d: number) => (d * Math.PI) / 180
-  const dLat = toRad(lat2 - lat1)
-  const dLng = toRad(lng2 - lng1)
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)))
-}
-
-function bearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const toRad = (d: number) => (d * Math.PI) / 180
-  const dLng = toRad(lng2 - lng1)
-  const y = Math.sin(dLng) * Math.cos(toRad(lat2))
-  const x =
-    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
-    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng)
-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360
-}

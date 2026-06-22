@@ -213,6 +213,7 @@ describe('nav watch', () => {
       type: 'position-updated',
       lat: 1,
       lng: 2,
+      heading: null,
     })
 
     await runner.run({ type: 'stop-nav-watch' })

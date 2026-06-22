@@ -146,13 +146,14 @@ describe('background refresh', () => {
     expect(result.state.pendingPoiRefresh).toEqual({
       pois: [POI_B],
       hasMore: false,
+      fetchedAt: null,
     })
   })
 
   it('applies the pending refresh when user backs out to POI_LIST', () => {
     const start: AppState = {
       ...listState(),
-      pendingPoiRefresh: { pois: [POI_OSM], hasMore: true },
+      pendingPoiRefresh: { pois: [POI_OSM], hasMore: true, fetchedAt: null },
       screen: { name: 'POI_DETAIL', poi: POI_A },
     }
     const result = reduce(start, { type: 'back' })

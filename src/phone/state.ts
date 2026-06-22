@@ -12,9 +12,7 @@
 
 import {
   INITIAL_PHONE_STATE,
-  INITIAL_NEARBY_STATE,
   type CategoryId,
-  type NearbyState,
   type PhoneEffect,
   type PhoneEvent,
   type PhoneState,
@@ -110,6 +108,7 @@ export function reduce(state: PhoneState, event: PhoneEvent): ReduceResult {
               // Label arrives separately via location-label-resolved.
               label: state.nearby.location?.label ?? null,
             },
+            locationSource: event.source ?? 'native',
           },
         },
         effects: [
@@ -215,20 +214,6 @@ export function reduce(state: PhoneState, event: PhoneEvent): ReduceResult {
     }
   }
 }
-
-// ─── Nearby helpers ───────────────────────────────────────────────────────
-
-/** Reset Nearby state to its initial shape (used by tests). */
-export function resetNearby(state: PhoneState): PhoneState {
-  return { ...state, nearby: INITIAL_NEARBY_STATE }
-}
-
-/** Convenience: patch only the nearby slice without touching settings. */
-function withNearby(state: PhoneState, nearby: Partial<NearbyState>): PhoneState {
-  return { ...state, nearby: { ...state.nearby, ...nearby } }
-}
-// Mark as used — withNearby is intentionally available for future callers.
-void withNearby
 
 /**
  * Apply a settings change: update state, mark sync in-flight, and emit

@@ -22,6 +22,13 @@ export function LocationSearchForm({ onSelect, onCancel }: LocationSearchFormPro
   const [status, setStatus] = useState<SearchStatus>('idle')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     if (mode !== 'search') return
@@ -37,10 +44,12 @@ export function LocationSearchForm({ onSelect, onCancel }: LocationSearchFormPro
       setErrorMsg(null)
       searchLocations(query.trim())
         .then((r) => {
+          if (!mountedRef.current) return
           setResults(r)
           setStatus('idle')
         })
         .catch(() => {
+          if (!mountedRef.current) return
           setStatus('error')
           setErrorMsg("Couldn't search right now — check your connection.")
         })
@@ -56,6 +65,7 @@ export function LocationSearchForm({ onSelect, onCancel }: LocationSearchFormPro
     setErrorMsg(null)
     searchLocations(query.trim())
       .then((r) => {
+        if (!mountedRef.current) return
         if (r.length === 0) {
           setStatus('error')
           setErrorMsg('Address not found. Try rewording it or go back to search.')
@@ -64,6 +74,7 @@ export function LocationSearchForm({ onSelect, onCancel }: LocationSearchFormPro
         }
       })
       .catch(() => {
+        if (!mountedRef.current) return
         setStatus('error')
         setErrorMsg("Couldn't search right now — check your connection.")
       })
