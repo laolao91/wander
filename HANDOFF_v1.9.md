@@ -1,5 +1,5 @@
 # Wander v1.9 — Session Handoff
-_Updated: 2026-06-22 | Status: v1.10.0 code complete, tests green — commit/push/EHPK pending (see entry below)_
+_Updated: 2026-06-22 | Status: v1.10.0 committed locally (`9dbdc61`); EHPK built; **push to GitHub blocked on an expired PAT** (see entry below)_
 
 ---
 
@@ -112,6 +112,20 @@ about when APPS Bridge kicks in changed.
 passing across 16 files (up from 336/14 before this session — sdkLocation
 module: +11, effects.test.ts ordering: +5, runEffect.test.ts: +6 = +22);
 `vite build` succeeds.
+
+**Committed:** `9dbdc61` — "feat: v1.10.0 — Even Hub SDK native phone-location
+bridge as additional GPS source" (11 files changed). **EHPK built:**
+`wander-v1.10.0.ehpk` (149259 bytes) via `npm run pack`, gitignored same as
+prior `.ehpk` builds. **Push to GitHub BLOCKED:** `git push origin main`
+failed with `403 — Permission to laolao91/wander.git denied to laolao91`.
+The stored credential (`credential.helper = osxkeychain`) is being rejected
+by GitHub — almost certainly the same expired-PAT situation this file
+already flagged ("PAT regenerated 2026-06-16... if expired by next session,
+user will need to regenerate again"). No `GITHUB_TOKEN` was available in
+this session to override it, and no workaround was attempted — needs the
+user to regenerate a PAT (or refresh the keychain credential) before
+`git push origin main` can succeed. The commit is otherwise ready to push
+as-is; nothing further needs to change in the working tree.
 
 ---
 
