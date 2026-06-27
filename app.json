@@ -2,7 +2,7 @@
   "package_id": "com.stevenlao.wander",
   "edition": "202601",
   "name": "Wander",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "min_app_version": "0.1.0",
   "min_sdk_version": "0.0.10",
   "tagline": "Discover what's around you",
@@ -13,7 +13,7 @@
     {
       "name": "network",
       "desc": "Fetch nearby points of interest and Wikipedia summaries from the Wander API. Also connects to the optional APPS Bridge Android app at 127.0.0.1 (loopback only, never leaves the device) as a GPS fallback if device location isn't available to the WebView.",
-      "whitelist": ["https://wander-six-phi.vercel.app", "https://react.dev", "ws://127.0.0.1:7071"]
+      "whitelist": ["https://wander-six-phi.vercel.app", "https://react.dev", "ws://127.0.0.1:7071", "https://www.google.com", "https://gitlab.com"]
     },
     {
       "name": "location",
