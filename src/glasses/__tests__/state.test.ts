@@ -1047,3 +1047,137 @@ describe('H2: retry after route/wiki failure', () => {
     expect(retried.effects).toEqual([{ type: 'fetch-pois', offset: 0, mode: 'replace' }])
   })
 })
+
+// ─── H2 follow-up: retryContext must match the *current* screen's POI ──
+//
+// A route/wiki fetch stays in flight while the screen it was launched
+// from stays put (executePoiDetailAction's navigate/read-more and
+// NAV_ACTIVE's reroute never change the screen while their effect runs).
+// That means a user can back out of POI_ACTIONS(A), browse elsewhere, and
+// land on POI_ACTIONS(B) or a rerouted NAV_ACTIVE(C) before the *original*
+// A-targeted fetch fails. Without an identity check, the old code would
+// build retryContext from whatever POI is currently on screen but the
+// stale target from the event — retry would show the right-looking
+// screen but silently re-fire the fetch for the wrong POI. These tests
+// pin: no identity match -> no retryContext -> safe POI_LIST fallback
+// (the same fallback already used for "navigated away entirely").
+
+describe('H2: retryContext requires matching POI identity', () => {
+  // Distinct from POI_A/POI_B: needs its own wikiTitle so the wiki-failed
+  // mismatch case has something unambiguous to differ from.
+  const POI_C = makePoi({ id: 'wiki_c', name: 'Gamma', wikiTitle: 'Gamma_Wiki' })
+
+  it('omits retryContext when POI_ACTIONS has since switched to a different POI (route-failed)', () => {
+    // Screen shows POI_C, but the failure is for the stale target POI_A.
+    const poiActionsState: AppState = {
+      ...listState(),
+      screen: {
+        name: 'POI_ACTIONS',
+        poi: POI_C,
+        actions: ['navigate', 'safari', 'read-more', 'close', 'back'],
+        cursorIndex: 0,
+      },
+    }
+    const failed = reduce(poiActionsState, {
+      type: 'route-failed',
+      from: poiActionsState.position!,
+      to: POI_A,
+    })
+    expect(failed.state.screen.name).toBe('ERROR_NETWORK')
+    expect(
+      (failed.state.screen as Extract<typeof failed.state.screen, { name: 'ERROR_NETWORK' }>)
+        .retryContext,
+    ).toBeUndefined()
+
+    const retried = reduce(failed.state, { type: 'retry' })
+    expect(retried.state.screen.name).toBe('POI_LIST')
+  })
+
+  it('omits retryContext when NAV_ACTIVE has since switched destination (route-failed reroute)', () => {
+    // Screen is navigating to POI_C, but the failure is for the stale
+    // reroute target POI_A.
+    const navState: AppState = {
+      ...listState(),
+      screen: {
+        name: 'NAV_ACTIVE',
+        destination: POI_C,
+        route: {
+          totalDistanceMeters: 100,
+          totalDurationSeconds: 60,
+          steps: [],
+          geometry: [],
+          language: 'en',
+        },
+        currentStepIndex: 0,
+        position: { lat: 40.7128, lng: -74.006 },
+        arrived: false,
+      },
+    }
+    const failed = reduce(navState, {
+      type: 'route-failed',
+      from: navState.position!,
+      to: POI_A,
+    })
+    expect(failed.state.screen.name).toBe('ERROR_NETWORK')
+    expect(
+      (failed.state.screen as Extract<typeof failed.state.screen, { name: 'ERROR_NETWORK' }>)
+        .retryContext,
+    ).toBeUndefined()
+
+    const retried = reduce(failed.state, { type: 'retry' })
+    expect(retried.state.screen.name).toBe('POI_LIST')
+  })
+
+  it('omits retryContext when POI_ACTIONS has since switched to a POI with a different wikiTitle (wiki-failed)', () => {
+    // Screen shows POI_C, but the failure is for POI_A's wikiTitle.
+    const poiActionsState: AppState = {
+      ...listState(),
+      screen: {
+        name: 'POI_ACTIONS',
+        poi: POI_C,
+        actions: ['navigate', 'safari', 'read-more', 'close', 'back'],
+        cursorIndex: 0,
+      },
+    }
+    const failed = reduce(poiActionsState, {
+      type: 'wiki-failed',
+      title: POI_A.wikiTitle!,
+      lang: null,
+    })
+    expect(failed.state.screen.name).toBe('ERROR_NETWORK')
+    expect(
+      (failed.state.screen as Extract<typeof failed.state.screen, { name: 'ERROR_NETWORK' }>)
+        .retryContext,
+    ).toBeUndefined()
+
+    const retried = reduce(failed.state, { type: 'retry' })
+    expect(retried.state.screen.name).toBe('POI_LIST')
+  })
+
+  it('still attaches retryContext when the POI identity matches (regression guard on the original 5 tests)', () => {
+    const poiActionsState: AppState = {
+      ...listState(),
+      screen: {
+        name: 'POI_ACTIONS',
+        poi: POI_A,
+        actions: ['navigate', 'safari', 'read-more', 'close', 'back'],
+        cursorIndex: 0,
+      },
+    }
+    const failed = reduce(poiActionsState, {
+      type: 'route-failed',
+      from: poiActionsState.position!,
+      to: POI_A,
+    })
+    const screen = failed.state.screen as Extract<
+      typeof failed.state.screen,
+      { name: 'ERROR_NETWORK' }
+    >
+    expect(screen.retryContext).toEqual({
+      kind: 'fetch-route',
+      screen: poiActionsState.screen,
+      from: poiActionsState.position,
+      to: POI_A,
+    })
+  })
+})

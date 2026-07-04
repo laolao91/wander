@@ -20,6 +20,7 @@ import type {
   Screen,
   PoiDetailAction,
   Settings,
+  RetryContext,
 } from './screens/types'
 import { canTransition, DEFAULT_SETTINGS } from './screens/types'
 import { LIST_DISPLAY_LIMIT } from './render'
@@ -157,30 +158,50 @@ export function reduce(state: AppState, event: Event): ReducerResult {
     case 'route-loaded':
       return onRouteLoaded(state, event.route)
 
-    case 'route-failed':
+    case 'route-failed': {
+      // Identity-check against the *current* screen's POI, not just its
+      // name: the fetch stays in flight while the originating screen
+      // stays put (executePoiDetailAction / NAV_ACTIVE reroute don't
+      // change screens while their effect runs), so the user can back out
+      // and land on a *different* POI_ACTIONS/NAV_ACTIVE before this
+      // stale fetch resolves. Without the id check we'd attach a
+      // retryContext pairing the right-looking current screen with the
+      // wrong (stale) retry target — a silent wrong-destination retry,
+      // worse than the dead end this task set out to fix. No match ->
+      // undefined -> onRetry's existing POI_LIST fallback.
+      let retryContext: RetryContext | undefined
+      if (state.screen.name === 'POI_ACTIONS' && state.screen.poi.id === event.to.id) {
+        retryContext = { kind: 'fetch-route', screen: state.screen, from: event.from, to: event.to }
+      } else if (state.screen.name === 'NAV_ACTIVE' && state.screen.destination.id === event.to.id) {
+        retryContext = { kind: 'fetch-route', screen: state.screen, from: event.from, to: event.to }
+      }
       return next(state, {
         name: 'ERROR_NETWORK',
         message: 'Could not load directions',
         retryAction: 'fetch-route',
-        retryContext:
-          state.screen.name === 'POI_ACTIONS' || state.screen.name === 'NAV_ACTIVE'
-            ? { kind: 'fetch-route', screen: state.screen, from: event.from, to: event.to }
-            : undefined,
+        retryContext,
       })
+    }
 
     case 'wiki-loaded':
       return onWikiLoaded(state, event.article)
 
-    case 'wiki-failed':
+    case 'wiki-failed': {
+      // Same staleness hazard as route-failed above, but identity here is
+      // wikiTitle (the thing that actually determined what was fetched),
+      // not poi.id — a POI could theoretically share nothing else, but
+      // wikiTitle is what fetch-wiki keyed on.
+      const retryContext: RetryContext | undefined =
+        state.screen.name === 'POI_ACTIONS' && state.screen.poi.wikiTitle === event.title
+          ? { kind: 'fetch-wiki', screen: state.screen, title: event.title, lang: event.lang }
+          : undefined
       return next(state, {
         name: 'ERROR_NETWORK',
         message: 'Could not load article',
         retryAction: 'fetch-wiki',
-        retryContext:
-          state.screen.name === 'POI_ACTIONS'
-            ? { kind: 'fetch-wiki', screen: state.screen, title: event.title, lang: event.lang }
-            : undefined,
+        retryContext,
       })
+    }
 
     case 'position-updated':
       return onPositionUpdated(state, event.lat, event.lng, event.heading ?? null, event.source ?? 'gps')
