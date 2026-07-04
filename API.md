@@ -2,7 +2,7 @@
 
 Serverless endpoints backing the Wander G2 app. All routes are plain HTTP
 GETs, return JSON, and set appropriate edge-cache headers. Base URL in
-production: `https://wander-laolao91s-projects.vercel.app`.
+production: `https://wander-six-phi.vercel.app`.
 
 ## Conventions
 
