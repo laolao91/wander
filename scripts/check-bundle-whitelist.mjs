@@ -28,10 +28,25 @@ function isCovered(url, whitelist) {
   return whitelist.some((entry) => url.startsWith(entry))
 }
 
+// react-dom bakes these XML/SVG/MathML namespace URIs into every build
+// as literal string identifiers passed to createElementNS/setAttributeNS
+// — they are never fetched over the network. Excluded here (not added
+// to app.json's whitelist, since they aren't real network endpoints);
+// without this exclusion the checker would fail on every single build,
+// which defeats its purpose as an automated pre-submission gate.
+const KNOWN_NON_NETWORK_URLS = new Set([
+  'http://www.w3.org/2000/svg',
+  'http://www.w3.org/1998/Math/MathML',
+  'http://www.w3.org/1999/xlink',
+  'http://www.w3.org/XML/1998/namespace',
+])
+
 const whitelist = readAppJsonWhitelist()
 const files = readdirSync(DIST_ASSETS).filter((f) => f.endsWith('.js'))
 const allUrls = files.flatMap((f) => extractUrls(readFileSync(join(DIST_ASSETS, f), 'utf8')))
-const uncovered = [...new Set(allUrls)].filter((url) => !isCovered(url, whitelist))
+const uncovered = [...new Set(allUrls)].filter(
+  (url) => !isCovered(url, whitelist) && !KNOWN_NON_NETWORK_URLS.has(url),
+)
 
 if (uncovered.length > 0) {
   console.error('[check-bundle-whitelist] Uncovered URLs found in built bundle:')
