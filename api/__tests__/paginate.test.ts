@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { paginate, cleanText } from '../wiki.js'
+import { describe, it, expect, vi } from 'vitest'
+import type { VercelRequest, VercelResponse } from '@vercel/node'
+import handler, { paginate, cleanText } from '../wiki.js'
 
 describe('paginate', () => {
   it('returns a single page when text fits', () => {
@@ -56,5 +57,68 @@ describe('cleanText', () => {
 
   it('removes heading markers left by extracts API', () => {
     expect(cleanText('Intro text\n== History ==\nMore text')).toBe('Intro text\n\nMore text')
+  })
+})
+
+function mockReqRes(query: Record<string, string>) {
+  const req = {
+    method: 'GET',
+    query,
+    headers: {},
+  } as unknown as VercelRequest
+
+  const res = {
+    statusCode: 200,
+    headers: {} as Record<string, string>,
+    body: undefined as unknown,
+    status(code: number) {
+      this.statusCode = code
+      return this
+    },
+    setHeader(name: string, value: string) {
+      this.headers[name] = value
+      return this
+    },
+    json(payload: unknown) {
+      this.body = payload
+      return this
+    },
+    end() {
+      return this
+    },
+  }
+
+  return { req, res: res as unknown as VercelResponse & typeof res }
+}
+
+describe('wiki handler', () => {
+  it('derives title and summary from the full-extract call alone, without a separate summary request', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      const u = url.toString()
+      if (u.includes('/w/api.php')) {
+        return {
+          ok: true,
+          json: async () => ({
+            query: { pages: [{ title: 'Flatiron_Building', extract: 'A historic building.' }] },
+          }),
+        } as Response
+      }
+      throw new Error(`unexpected fetch: ${u}`)
+    })
+
+    const { req, res } = mockReqRes({ title: 'Flatiron_Building' })
+    await handler(req, res)
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1) // only the full-extract call, no /rest_v1/page/summary/ call
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({
+      title: 'Flatiron Building',
+      summary: 'A historic building.',
+      pages: ['A historic building.'],
+      totalPages: 1,
+      lang: 'en',
+    })
+
+    fetchSpy.mockRestore()
   })
 })

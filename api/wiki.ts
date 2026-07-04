@@ -18,13 +18,6 @@ const UA = 'Wander/1.0 (Even Realities G2 companion app; steven.lao30@gmail.com)
 const PAGE_SIZE_CHARS = 380
 const FETCH_TIMEOUT_MS = 8000
 
-type SummaryApiResponse = {
-  title?: string
-  extract?: string
-  description?: string
-  type?: string
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (applyCors(req, res)) return
 
@@ -39,10 +32,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const lang = resolveLang(req.query.lang, req.headers['accept-language'])
 
   try {
-    const [summary, pages] = await Promise.all([
-      fetchSummary(title, lang),
-      fetchFullExtract(title, lang),
-    ])
+    const pages = await fetchFullExtract(title, lang)
 
     if (!pages) {
       res.status(404).json({ error: 'Article not found', title, lang })
@@ -55,8 +45,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=86400')
     res.setHeader('Vary', 'Accept-Language')
     res.status(200).json({
-      title: summary?.title ?? title.replace(/_/g, ' '),
-      summary: summary?.extract ?? pages[0] ?? '',
+      title: title.replace(/_/g, ' '),
+      summary: pages[0] ?? '',
       pages,
       totalPages: pages.length,
       lang,
@@ -65,13 +55,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const msg = err instanceof Error ? err.message : 'unknown error'
     res.status(502).json({ error: 'Wikipedia fetch failed', detail: msg })
   }
-}
-
-async function fetchSummary(title: string, lang: string): Promise<SummaryApiResponse | null> {
-  const url = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`
-  const r = await fetchWithTimeout(url)
-  if (!r.ok) return null
-  return (await r.json()) as SummaryApiResponse
 }
 
 async function fetchFullExtract(title: string, lang: string): Promise<string[] | null> {
