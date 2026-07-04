@@ -927,3 +927,123 @@ describe('settings-changed', () => {
     expect(result.effects).toEqual([{ type: 'fetch-pois', offset: 0, mode: 'replace' }])
   })
 })
+
+// ─── H2: retry no longer dead-ends for route/wiki failures ────────────
+
+describe('H2: retry after route/wiki failure', () => {
+  it('re-enters POI_ACTIONS and re-fires fetch-route on retry after a navigate-triggered route failure', () => {
+    const poiActionsState: AppState = {
+      ...listState(),
+      screen: {
+        name: 'POI_ACTIONS',
+        poi: POI_A,
+        actions: ['navigate', 'safari', 'read-more', 'close', 'back'],
+        cursorIndex: 0,
+      },
+    }
+    const poiActionsScreen = poiActionsState.screen as Extract<
+      typeof poiActionsState.screen,
+      { name: 'POI_ACTIONS' }
+    >
+    const failed = reduce(poiActionsState, {
+      type: 'route-failed',
+      from: poiActionsState.position!,
+      to: poiActionsScreen.poi,
+    })
+    expect(failed.state.screen.name).toBe('ERROR_NETWORK')
+
+    const retried = reduce(failed.state, { type: 'retry' })
+    expect(retried.state.screen).toEqual(poiActionsState.screen)
+    expect(retried.effects).toEqual([
+      { type: 'fetch-route', from: poiActionsState.position, to: poiActionsScreen.poi },
+    ])
+  })
+
+  it('re-enters NAV_ACTIVE and re-fires fetch-route on retry after a reroute failure', () => {
+    const navState: AppState = {
+      ...listState(),
+      screen: {
+        name: 'NAV_ACTIVE',
+        destination: POI_A,
+        route: {
+          totalDistanceMeters: 100,
+          totalDurationSeconds: 60,
+          steps: [],
+          geometry: [],
+          language: 'en',
+        },
+        currentStepIndex: 0,
+        position: { lat: 40.7128, lng: -74.006 },
+        arrived: false,
+      },
+    }
+    const navScreen = navState.screen as Extract<typeof navState.screen, { name: 'NAV_ACTIVE' }>
+    const failed = reduce(navState, {
+      type: 'route-failed',
+      from: navState.position!,
+      to: navScreen.destination,
+    })
+    expect(failed.state.screen.name).toBe('ERROR_NETWORK')
+
+    const retried = reduce(failed.state, { type: 'retry' })
+    expect(retried.state.screen).toEqual(navState.screen)
+    expect(retried.effects).toEqual([
+      { type: 'fetch-route', from: navState.position, to: navScreen.destination },
+    ])
+  })
+
+  it('re-enters POI_ACTIONS and re-fires fetch-wiki on retry after a read-more failure', () => {
+    const poiActionsState: AppState = {
+      ...listState(),
+      screen: {
+        name: 'POI_ACTIONS',
+        poi: POI_A,
+        actions: ['navigate', 'safari', 'read-more', 'close', 'back'],
+        cursorIndex: 0,
+      },
+    }
+    const poiActionsScreen = poiActionsState.screen as Extract<
+      typeof poiActionsState.screen,
+      { name: 'POI_ACTIONS' }
+    >
+    const failed = reduce(poiActionsState, {
+      type: 'wiki-failed',
+      title: poiActionsScreen.poi.wikiTitle!,
+      lang: null,
+    })
+    expect(failed.state.screen.name).toBe('ERROR_NETWORK')
+
+    const retried = reduce(failed.state, { type: 'retry' })
+    expect(retried.state.screen).toEqual(poiActionsState.screen)
+    expect(retried.effects).toEqual([
+      { type: 'fetch-wiki', title: poiActionsScreen.poi.wikiTitle, lang: null },
+    ])
+  })
+
+  it('falls back to POI_LIST on retry if the originating screen is unknown (defensive — should not normally happen)', () => {
+    // A route-failed dispatched while screen is neither POI_ACTIONS nor
+    // NAV_ACTIVE (e.g. user already navigated to POI_LIST before the
+    // in-flight fetch resolved) — retryContext is omitted.
+    const failed = reduce(listState(), {
+      type: 'route-failed',
+      from: { lat: 0, lng: 0 },
+      to: POI_A,
+    })
+    expect(failed.state.screen.name).toBe('ERROR_NETWORK')
+    const retried = reduce(failed.state, { type: 'retry' })
+    expect(retried.state.screen.name).toBe('POI_LIST')
+  })
+
+  it('fetch-pois retry is unaffected by this change', () => {
+    const errorState: AppState = {
+      ...listState(),
+      screen: {
+        name: 'ERROR_NETWORK',
+        message: 'Network unavailable',
+        retryAction: 'fetch-pois',
+      },
+    }
+    const retried = reduce(errorState, { type: 'retry' })
+    expect(retried.effects).toEqual([{ type: 'fetch-pois', offset: 0, mode: 'replace' }])
+  })
+})

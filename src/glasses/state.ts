@@ -105,9 +105,9 @@ export type Event =
     }
   | { type: 'pois-failed'; reason: 'location' | 'network' | 'empty' }
   | { type: 'route-loaded'; route: Route }
-  | { type: 'route-failed' }
+  | { type: 'route-failed'; from: { lat: number; lng: number }; to: Poi }
   | { type: 'wiki-loaded'; article: WikiArticle }
-  | { type: 'wiki-failed' }
+  | { type: 'wiki-failed'; title: string; lang: string | null }
   | { type: 'position-updated'; lat: number; lng: number; heading?: number | null; source?: 'gps' | 'manual' }
   | { type: 'settings-changed'; settings: Partial<Settings> }
   | { type: 'retry' }
@@ -162,6 +162,10 @@ export function reduce(state: AppState, event: Event): ReducerResult {
         name: 'ERROR_NETWORK',
         message: 'Could not load directions',
         retryAction: 'fetch-route',
+        retryContext:
+          state.screen.name === 'POI_ACTIONS' || state.screen.name === 'NAV_ACTIVE'
+            ? { kind: 'fetch-route', screen: state.screen, from: event.from, to: event.to }
+            : undefined,
       })
 
     case 'wiki-loaded':
@@ -172,6 +176,10 @@ export function reduce(state: AppState, event: Event): ReducerResult {
         name: 'ERROR_NETWORK',
         message: 'Could not load article',
         retryAction: 'fetch-wiki',
+        retryContext:
+          state.screen.name === 'POI_ACTIONS'
+            ? { kind: 'fetch-wiki', screen: state.screen, title: event.title, lang: event.lang }
+            : undefined,
       })
 
     case 'position-updated':
@@ -460,24 +468,32 @@ function onPositionUpdated(
 
 function onRetry(state: AppState): ReducerResult {
   switch (state.screen.name) {
-    case 'ERROR_NETWORK':
-      switch (state.screen.retryAction) {
-        case 'fetch-pois':
-          return goLoading(state, 'fetch-pois')
-        case 'fetch-route':
-          // Caller needs to know where to retry to; bridge handles that.
-          return goLoading(state, null)
-        case 'fetch-wiki':
-          return goLoading(state, null)
+    case 'ERROR_NETWORK': {
+      const { retryAction, retryContext } = state.screen
+      if (retryAction === 'fetch-pois') {
+        return goLoading(state, 'fetch-pois')
       }
-      break
+      if (retryAction === 'fetch-route' && retryContext?.kind === 'fetch-route') {
+        return next(state, retryContext.screen, [
+          { type: 'fetch-route', from: retryContext.from, to: retryContext.to },
+        ])
+      }
+      if (retryAction === 'fetch-wiki' && retryContext?.kind === 'fetch-wiki') {
+        return next(state, retryContext.screen, [
+          { type: 'fetch-wiki', title: retryContext.title, lang: retryContext.lang },
+        ])
+      }
+      // Defensive fallback — no context to restore (user navigated away
+      // before the failure landed). Return to the list rather than
+      // dead-ending; matches onBack's existing ERROR_NETWORK handling.
+      return applyPendingRefresh(state)
+    }
     case 'ERROR_LOCATION':
     case 'ERROR_EMPTY':
       return goLoading(state, 'fetch-pois')
     default:
       return noop(state)
   }
-  return noop(state)
 }
 
 function onFavoriteToggled(state: AppState, poi: Poi): ReducerResult {

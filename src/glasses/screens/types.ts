@@ -143,7 +143,20 @@ export interface ErrorNetworkScreen {
   message: string
   /** Where to retry to — affects what the reducer dispatches on retry. */
   retryAction: 'fetch-pois' | 'fetch-route' | 'fetch-wiki'
+  /**
+   * Captured at failure time so retry can re-enter the exact originating
+   * screen and re-fire the exact effect that failed, instead of dead-
+   * ending on a generic LOADING screen with nothing in flight (see
+   * Wander_v2_Research.md H2). Absent only in the defensive edge case
+   * where the user navigated away from POI_ACTIONS/NAV_ACTIVE before the
+   * failure landed — retry then falls back to POI_LIST.
+   */
+  retryContext?: RetryContext
 }
+
+export type RetryContext =
+  | { kind: 'fetch-route'; screen: PoiActionsScreen | NavActiveScreen; from: { lat: number; lng: number }; to: Poi }
+  | { kind: 'fetch-wiki'; screen: PoiActionsScreen; title: string; lang: string | null }
 
 export interface ErrorEmptyScreen {
   name: 'ERROR_EMPTY'
@@ -235,7 +248,7 @@ export const ALLOWED_TRANSITIONS: Record<ScreenName, ReadonlySet<ScreenName>> = 
     'POI_DETAIL', // tap or double-tap returns to detail
   ]),
   ERROR_LOCATION: new Set(['LOADING', 'POI_LIST']),
-  ERROR_NETWORK: new Set(['LOADING', 'POI_LIST', 'POI_DETAIL']),
+  ERROR_NETWORK: new Set(['LOADING', 'POI_LIST', 'POI_DETAIL', 'POI_ACTIONS', 'NAV_ACTIVE']),
   ERROR_EMPTY: new Set(['LOADING', 'POI_LIST']),
 }
 

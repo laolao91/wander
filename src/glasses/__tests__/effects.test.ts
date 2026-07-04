@@ -157,7 +157,7 @@ describe('fetch-route effect', () => {
     expect(dispatched).toEqual([{ type: 'route-loaded', route }])
   })
 
-  it('dispatches route-failed on error', async () => {
+  it('dispatches route-failed on error, echoing back from/to for retry', async () => {
     vi.spyOn(api, 'fetchRoute').mockRejectedValue(new Error('boom'))
     const { runner, dispatched } = makeRunner()
     await runner.run({
@@ -165,7 +165,9 @@ describe('fetch-route effect', () => {
       from: { lat: 1, lng: 2 },
       to: MOCK_POI,
     })
-    expect(dispatched).toEqual([{ type: 'route-failed' }])
+    expect(dispatched).toEqual([
+      { type: 'route-failed', from: { lat: 1, lng: 2 }, to: MOCK_POI },
+    ])
   })
 })
 
@@ -186,11 +188,11 @@ describe('fetch-wiki effect', () => {
     expect(dispatched).toEqual([{ type: 'wiki-loaded', article }])
   })
 
-  it('dispatches wiki-failed on error', async () => {
+  it('dispatches wiki-failed on error, echoing back title/lang for retry', async () => {
     vi.spyOn(api, 'fetchWiki').mockRejectedValue(new Error('boom'))
     const { runner, dispatched } = makeRunner()
     await runner.run({ type: 'fetch-wiki', title: 'X', lang: null })
-    expect(dispatched).toEqual([{ type: 'wiki-failed' }])
+    expect(dispatched).toEqual([{ type: 'wiki-failed', title: 'X', lang: null }])
   })
 })
 

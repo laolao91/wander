@@ -66,7 +66,7 @@ export class EffectRunner {
         await this.runFetchPois(effect.offset, effect.mode, false)
         return
       case 'fetch-route':
-        await this.runFetchRoute(effect.from, effect.to.lat, effect.to.lng)
+        await this.runFetchRoute(effect.from, effect.to)
         return
       case 'fetch-wiki':
         await this.runFetchWiki(effect.title, effect.lang)
@@ -172,20 +172,19 @@ export class EffectRunner {
 
   private async runFetchRoute(
     from: { lat: number; lng: number },
-    toLat: number,
-    toLng: number,
+    to: Poi,
   ): Promise<void> {
     try {
       const route = await fetchRoute({
         fromLat: from.lat,
         fromLng: from.lng,
-        toLat,
-        toLng,
+        toLat: to.lat,
+        toLng: to.lng,
         lang: this.deps.getSettings().lang ?? undefined,
       })
       this.deps.dispatch({ type: 'route-loaded', route })
     } catch {
-      this.deps.dispatch({ type: 'route-failed' })
+      this.deps.dispatch({ type: 'route-failed', from, to })
     }
   }
 
@@ -197,7 +196,7 @@ export class EffectRunner {
       })
       this.deps.dispatch({ type: 'wiki-loaded', article })
     } catch {
-      this.deps.dispatch({ type: 'wiki-failed' })
+      this.deps.dispatch({ type: 'wiki-failed', title, lang })
     }
   }
 
