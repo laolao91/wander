@@ -45,7 +45,6 @@ vi.mock('@evenrealities/even_hub_sdk', () => ({ waitForEvenAppBridge: vi.fn(() =
 import { runEffect, requestLocationViaNavigatorOrBridge } from '../App'
 import { sdkGeolocate } from '../../glasses/sdkLocation'
 import { bridgeGeolocate } from '../../glasses/appsBridge'
-import { API_BASE } from '../../glasses/api'
 import type { PhoneEvent } from '../types'
 
 const mockSdkGeolocate = vi.mocked(sdkGeolocate)
@@ -183,12 +182,30 @@ describe('requestLocationViaNavigatorOrBridge', () => {
 // ─── geocode-location effect ───────────────────────────────────────────────
 
 describe('runEffect geocode-location', () => {
-  it('geocode-location effect calls /api/geocode with the absolute API_BASE', () => {
+  // API_BASE (src/glasses/api.ts) is `import.meta.env.DEV ? '/api' : 'https://...'`,
+  // evaluated once at module load, and Vitest always runs with DEV=true — so
+  // asserting against the *imported* API_BASE value is circular here too (see
+  // the matching comment in location-search.test.ts). Stub DEV to false and
+  // force a fresh module instance via resetModules() + dynamic import of
+  // '../App' so `runEffect` is bound to a `geocoding`/`api` module graph that
+  // actually re-evaluated API_BASE under DEV=false.
+  it('calls /api/geocode with the absolute production URL when DEV is false', async () => {
+    vi.stubEnv('DEV', false)
+    vi.resetModules()
+    const { runEffect: runEffectUnderProdEnv } = await import('../App')
+
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       json: async () => ({ label: 'Somewhere' }),
     } as Response)
-    runEffect({ type: 'geocode-location', lat: 1, lng: 2 }, vi.fn())
-    expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining(`${API_BASE}/geocode?lat=`))
+
+    runEffectUnderProdEnv({ type: 'geocode-location', lat: 1, lng: 2 }, vi.fn())
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('https://wander-six-phi.vercel.app/api/geocode?lat='),
+    )
+
     fetchSpy.mockRestore()
+    vi.unstubAllEnvs()
+    vi.resetModules()
   })
 })
