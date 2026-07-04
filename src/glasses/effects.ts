@@ -131,7 +131,12 @@ export class EffectRunner {
       this.deps.dispatch({ type: 'pois-failed', reason: 'location' })
       return
     }
-    this.deps.dispatch({ type: 'position-updated', lat: pos.lat, lng: pos.lng })
+    this.deps.dispatch({
+      type: 'position-updated',
+      lat: pos.lat,
+      lng: pos.lng,
+      source: settings.manualLocation ? 'manual' : 'gps',
+    })
 
     try {
       console.log('[wander][fetch] /api/poi', {

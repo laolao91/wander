@@ -795,4 +795,25 @@ describe('NAV_ACTIVE step advancement and arrival', () => {
     const screen = next.screen as Extract<typeof next.screen, { name: 'NAV_ACTIVE' }>
     expect(screen.currentStepIndex).toBe(0)
   })
+
+  it('ignores a manual-sourced position-updated while NAV_ACTIVE (does not teleport or trigger arrival)', () => {
+    // Manual-pin coords land within arrival range of the destination
+    // (48.8583, 2.2945) — a 5-minute background refresh sourcing from a
+    // manual pin must not be allowed to spuriously trigger arrival or
+    // teleport the rendered nav position while a real GPS watch is active.
+    const state = makeNavState({ position: { lat: 48.8650, lng: 2.2945 } })
+    const result = reduce(state, {
+      type: 'position-updated', lat: 48.8584, lng: 2.2945, source: 'manual',
+    })
+    expect(result.state.screen).toBe(state.screen) // completely unchanged
+    expect(result.effects).toEqual([])
+  })
+
+  it('still applies a gps-sourced position-updated while NAV_ACTIVE', () => {
+    const state = makeNavState({ position: { lat: 48.8650, lng: 2.2945 } })
+    const result = reduce(state, {
+      type: 'position-updated', lat: 48.8600, lng: 2.2950, source: 'gps',
+    })
+    expect(result.state.screen).not.toBe(state.screen)
+  })
 })

@@ -108,7 +108,7 @@ export type Event =
   | { type: 'route-failed' }
   | { type: 'wiki-loaded'; article: WikiArticle }
   | { type: 'wiki-failed' }
-  | { type: 'position-updated'; lat: number; lng: number; heading?: number | null }
+  | { type: 'position-updated'; lat: number; lng: number; heading?: number | null; source?: 'gps' | 'manual' }
   | { type: 'settings-changed'; settings: Partial<Settings> }
   | { type: 'retry' }
   | { type: 'favorite-toggled'; poi: Poi }
@@ -175,7 +175,7 @@ export function reduce(state: AppState, event: Event): ReducerResult {
       })
 
     case 'position-updated':
-      return onPositionUpdated(state, event.lat, event.lng, event.heading ?? null)
+      return onPositionUpdated(state, event.lat, event.lng, event.heading ?? null, event.source ?? 'gps')
 
     case 'settings-changed':
       return {
@@ -365,8 +365,20 @@ function onPositionUpdated(
   lat: number,
   lng: number,
   heading: number | null,
+  source: 'gps' | 'manual' = 'gps',
 ): ReducerResult {
   const position = { lat, lng }
+
+  if (state.screen.name === 'NAV_ACTIVE' && source === 'manual') {
+    // A manual-location fix is a pinned search origin, not a real GPS
+    // reading. The 5-minute background refresh timer runs regardless of
+    // screen and would otherwise teleport the nav position/heading (and
+    // could spuriously trigger arrival) using stale pin coords. Ignore
+    // entirely while navigating — the GPS watch (source: 'gps') is the
+    // sole legitimate position feed during NAV_ACTIVE. See
+    // Wander_v2_Research.md M1.
+    return noop(state)
+  }
 
   if (state.screen.name === 'NAV_ACTIVE') {
     const screen = state.screen
