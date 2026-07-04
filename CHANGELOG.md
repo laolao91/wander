@@ -5,6 +5,34 @@ All notable changes to Wander will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-07-04
+
+Full fix pass from a fresh code review (`Wander_v2_Research.md`): fixed 3 High-severity
+bugs — persisted settings (including manual location) never reached the glasses at boot
+(`settings-hydrated` now broadcasts on hydration, not just on later changes); retrying
+after a failed route or Wikipedia fetch dead-ended on a blank loading screen with nothing
+in flight (added `RetryContext` so retry restores the exact originating screen and
+re-fires the exact request); `/api/geocode` was called with relative URLs, breaking
+manual-location search in installed builds (now uses the same absolute `API_BASE` fix
+applied to `/api/poi` in v1.0.2). Fixed 6 Medium-severity bugs: a manual location set
+during active navigation could teleport the nav position and falsely trigger arrival;
+the POI list's native selection border and the app-drawn cursor could point at different
+rows (native border now disabled); settings changes could fan out into redundant fetches
+(units-only changes now skip the refetch, and the phone debounces location lookups);
+overlapping minimap pushes during navigation could apply out of order (now serialized);
+phone geolocation had no timeout guard against a hung native callback; server logs no
+longer record full-precision coordinates. Cleaned up 9 low-severity items: deduplicated
+haversine/bearing and DEV-mock-coordinate logic, dropped a redundant Wikipedia API call,
+removed dead code, added a post-build bundle scan (catches unwhitelisted URLs baked into
+dependencies, not just hand-written source), and migrated phone settings storage to
+`bridge.setLocalStorage` per spec, with a safe fallback. Added a new Language setting in
+Settings, threaded end-to-end from the phone UI to the glasses' POI/route/Wikipedia
+requests (20 languages, matching what the routing engine supports). Also fixed a
+user-reported bug: "Open in Maps"/"Website" links failing on Android with a WebView error
+(Google's Android app-handoff link isn't understood by the embedded WebView; now opens
+via the OS browser instead, reusing a fix already proven for the glasses' "Open in
+Safari" action).
+
 ## [1.11.0] - 2026-06-26
 
 Fixed two missing `network.whitelist` entries in `app.json` that caused the
