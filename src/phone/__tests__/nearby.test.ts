@@ -212,6 +212,22 @@ describe('location-acquired', () => {
       expect(effect.settings.enabledCategories).toEqual(['museums'])
     }
   })
+
+  it('does not fire geocode-location when the fix came from a manual pin', () => {
+    const result = reduce(INITIAL_STATE, {
+      type: 'location-acquired',
+      lat: 40.758, lng: -73.9855, source: 'manual',
+    })
+    expect(result.effects.some((e) => e.type === 'geocode-location')).toBe(false)
+  })
+
+  it('still fires geocode-location for native/bridge fixes', () => {
+    const result = reduce(INITIAL_STATE, {
+      type: 'location-acquired',
+      lat: 40.758, lng: -73.9855, source: 'native',
+    })
+    expect(result.effects.some((e) => e.type === 'geocode-location')).toBe(true)
+  })
 })
 
 // ─── Reducer: location-failed ─────────────────────────────────────────────

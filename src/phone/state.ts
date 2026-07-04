@@ -124,9 +124,13 @@ export function reduce(state: PhoneState, event: PhoneEvent): ReduceResult {
             lng: event.lng,
             settings: state.settings,
           },
-          // Reverse-geocode in parallel — result patches the location label
-          // in the header. Non-fatal if it fails or arrives late.
-          { type: 'geocode-location', lat: event.lat, lng: event.lng },
+          // Skip reverse-geocode for manual fixes — the user already
+          // supplied an authoritative label via LocationSearchForm; a
+          // reverse-geocode result would silently clobber it with a
+          // generic neighborhood string once it resolves.
+          ...(event.source === 'manual'
+            ? []
+            : [{ type: 'geocode-location' as const, lat: event.lat, lng: event.lng }]),
         ],
       }
 
