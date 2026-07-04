@@ -211,15 +211,25 @@ export function reduce(state: AppState, event: Event): ReducerResult {
       // limit) — skip the refetch when that's the only thing that
       // *actually changed*, to avoid a burst of redundant fetches during
       // rapid settings changes (Wander_v2_Research.md M6). `units` is the
-      // only such field today.
+      // only such field today. `lang` deliberately does NOT join this list
+      // (Task 18 / L8) — it changes what language POI/wiki/route requests
+      // ask the server for, so a lang-only change must still refetch.
       //
       // This must diff *values* (current vs. next), not just check which
       // keys are present in `event.settings` — bridge.ts's
       // handleSettingsChanged forwards the complete Settings snapshot on
       // every change (radiusMiles/categories are always present,
-      // unconditionally), so a key-presence check would see all 6 keys on
+      // unconditionally), so a key-presence check would see all keys on
       // every call and never skip the refetch in production, even when
       // only units actually changed.
+      //
+      // Every field besides `units` must appear in this conjunction (as an
+      // "unchanged" check) — otherwise a simultaneous units + $otherField
+      // change (e.g. the very first settings-hydrated broadcast after boot,
+      // which can carry multiple real diffs from DEFAULT_SETTINGS at once)
+      // would be misclassified as "only units changed" and silently skip a
+      // refetch that field's own change legitimately needs. `lang` is
+      // included here for exactly that reason.
       const nextSettings = { ...state.settings, ...event.settings }
       const onlyUnitsChanged =
         state.settings.units !== nextSettings.units &&
@@ -227,6 +237,7 @@ export function reduce(state: AppState, event: Event): ReducerResult {
         sameCategories(state.settings.categories, nextSettings.categories) &&
         state.settings.sort === nextSettings.sort &&
         state.settings.maxResults === nextSettings.maxResults &&
+        state.settings.lang === nextSettings.lang &&
         sameManualLocation(state.settings.manualLocation, nextSettings.manualLocation)
       return {
         state: { ...state, settings: nextSettings },

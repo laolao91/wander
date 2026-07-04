@@ -29,6 +29,7 @@ import {
   type RadiusMiles,
   type Settings,
 } from './types'
+import { SUPPORTED_LANGUAGES } from './lib/languages'
 
 export const STORAGE_KEYS = {
   // Settings (Phase H)
@@ -38,6 +39,7 @@ export const STORAGE_KEYS = {
   sort: 'wander_sort',
   maxResults: 'wander_max_results',
   manualLocation: 'wander_manual_location',
+  lang: 'wander_lang',
   // Nearby cache (Phase I) — WANDER_BUILD_SPEC.md §10
   poiCache: 'wander_last_poi_cache',
   poiCacheTs: 'wander_last_fetch_ts',
@@ -122,7 +124,7 @@ export function createBridgeKVStore(bridge: BridgeStorageFacade): KVStore {
  * entry is treated the same as a missing one.
  */
 export async function loadSettings(kv: KVStore): Promise<Settings> {
-  const [radiusRaw, categoriesRaw, unitsRaw, sortRaw, maxResultsRaw, manualLocationRaw] =
+  const [radiusRaw, categoriesRaw, unitsRaw, sortRaw, maxResultsRaw, manualLocationRaw, langRaw] =
     await Promise.all([
       kv.get(STORAGE_KEYS.radius),
       kv.get(STORAGE_KEYS.categories),
@@ -130,6 +132,7 @@ export async function loadSettings(kv: KVStore): Promise<Settings> {
       kv.get(STORAGE_KEYS.sort),
       kv.get(STORAGE_KEYS.maxResults),
       kv.get(STORAGE_KEYS.manualLocation),
+      kv.get(STORAGE_KEYS.lang),
     ])
   return {
     radiusMiles: parseRadius(radiusRaw),
@@ -138,6 +141,7 @@ export async function loadSettings(kv: KVStore): Promise<Settings> {
     sort: parseSort(sortRaw),
     maxResults: parseMaxResults(maxResultsRaw),
     manualLocation: parseManualLocation(manualLocationRaw),
+    lang: parseLang(langRaw),
   }
 }
 
@@ -160,6 +164,7 @@ export async function saveSettings(
       STORAGE_KEYS.manualLocation,
       settings.manualLocation ? JSON.stringify(settings.manualLocation) : '',
     ),
+    kv.set(STORAGE_KEYS.lang, settings.lang ?? ''),
   ])
 }
 
@@ -191,6 +196,16 @@ function parseMaxResults(raw: string | null): MaxResults {
   const n = Number(raw)
   if (n === 10 || n === 15 || n === 20) return n
   return 20
+}
+
+/**
+ * Accept only codes present in SUPPORTED_LANGUAGES. Anything else
+ * (missing key, unrecognized/legacy code) falls back to null, meaning
+ * "use the server's own Accept-Language resolution."
+ */
+function parseLang(raw: string | null): string | null {
+  if (raw === null) return null
+  return SUPPORTED_LANGUAGES.some((l) => l.code === raw) ? raw : null
 }
 
 /**

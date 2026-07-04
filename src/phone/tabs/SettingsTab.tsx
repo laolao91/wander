@@ -16,10 +16,11 @@
  */
 
 import { useState } from 'react'
-import { SettingsGroup, ListItem, Toggle, Slider, Card } from 'even-toolkit/web'
+import { SettingsGroup, ListItem, Toggle, Slider, Card, Select } from 'even-toolkit/web'
 import type { PhoneState, PhoneEvent, CategoryId, RadiusMiles, MaxResults, ManualLocation } from '../types'
 import { ALL_CATEGORIES, RADIUS_CHOICES, MAX_RESULTS_CHOICES } from '../types'
 import { LocationSearchForm } from '../components/LocationSearchForm'
+import { SUPPORTED_LANGUAGES } from '../lib/languages'
 
 // ─── Display metadata ────────────────────────────────────────────────────
 
@@ -293,6 +294,18 @@ export function SettingsTab({ state, dispatch }: SettingsTabProps) {
             ))}
           </div>
         </div>
+        <ListItem
+          title="Language"
+          trailing={
+            <Select
+              value={settings.lang ?? 'en'}
+              options={SUPPORTED_LANGUAGES.map((l) => ({ value: l.code, label: l.label }))}
+              onValueChange={(value) =>
+                dispatch({ type: 'lang-changed', lang: value === 'en' ? null : value })
+              }
+            />
+          }
+        />
       </SettingsGroup>
 
       {/* ── Sync info card ── */}

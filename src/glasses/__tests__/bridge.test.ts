@@ -6,6 +6,7 @@ import {
   isLowBattery,
   LOW_BATTERY_THRESHOLD,
   createInFlightGuard,
+  parseSettingsChangedEvent,
 } from '../bridge'
 import { INITIAL_STATE, type AppState, type Event } from '../state'
 import {
@@ -491,5 +492,85 @@ describe('createInFlightGuard', () => {
     guard.runIfIdle(third)
     expect(skipped).not.toHaveBeenCalled()
     expect(third).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ─── parseSettingsChangedEvent (L8 — language picker forwarding) ──────
+//
+// `initGlasses()`'s `handleSettingsChanged` closure isn't exported (same
+// DI-seam gap noted above for createInFlightGuard/initGlasses), so the
+// CustomEvent → settings-changed translation was factored out into this
+// standalone function specifically so it's directly testable here,
+// mirroring translateGlassesEvent's rationale.
+describe('parseSettingsChangedEvent', () => {
+  function settingsChangedEvent(detail: Record<string, unknown>): globalThis.Event {
+    return new CustomEvent('wander-settings-changed', { detail })
+  }
+
+  it('forwards lang from the wander-settings-changed CustomEvent into settings-changed', () => {
+    const event = parseSettingsChangedEvent(
+      settingsChangedEvent({
+        radiusMiles: 0.75,
+        categories: ['landmark'],
+        units: 'imperial',
+        sort: 'proximity',
+        maxResults: 20,
+        manualLocation: null,
+        lang: 'ja',
+      }),
+    )
+    expect(event).toEqual(
+      expect.objectContaining({
+        type: 'settings-changed',
+        settings: expect.objectContaining({ lang: 'ja' }),
+      }),
+    )
+  })
+
+  it('forwards lang: null (explicit clear back to server default)', () => {
+    const event = parseSettingsChangedEvent(
+      settingsChangedEvent({
+        radiusMiles: 0.75,
+        categories: ['landmark'],
+        lang: null,
+      }),
+    )
+    expect(event).toEqual(
+      expect.objectContaining({
+        settings: expect.objectContaining({ lang: null }),
+      }),
+    )
+  })
+
+  it('omits lang entirely when absent from the event (old sender) rather than forcing it to null', () => {
+    const event = parseSettingsChangedEvent(
+      settingsChangedEvent({
+        radiusMiles: 0.75,
+        categories: ['landmark'],
+      }),
+    )
+    if (event.type === 'settings-changed') {
+      expect('lang' in event.settings).toBe(false)
+    } else {
+      throw new Error('expected settings-changed')
+    }
+  })
+
+  it('still forwards the unconditional radiusMiles/categories fields alongside lang', () => {
+    const event = parseSettingsChangedEvent(
+      settingsChangedEvent({
+        radiusMiles: 1.5,
+        categories: ['park', 'museum'],
+        lang: 'de',
+      }),
+    )
+    expect(event).toEqual({
+      type: 'settings-changed',
+      settings: {
+        radiusMiles: 1.5,
+        categories: ['park', 'museum'],
+        lang: 'de',
+      },
+    })
   })
 })

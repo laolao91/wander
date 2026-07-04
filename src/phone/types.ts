@@ -116,6 +116,10 @@ export interface Settings {
   maxResults: MaxResults
   /** Overrides GPS when set. Null means use device GPS. */
   manualLocation: ManualLocation | null
+  /** Overrides Accept-Language / device locale for POI, wiki, and route
+   * requests. Null means "use the server's own resolution". Must stay
+   * one of SUPPORTED_LANGUAGES's codes (see src/phone/lib/languages.ts). */
+  lang: string | null
 }
 
 /**
@@ -136,6 +140,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sort: 'proximity',
   maxResults: 20,
   manualLocation: null,
+  lang: null,
 }
 
 // ─── Sync status (Settings tab) ────────────────────────────────────────────
@@ -246,6 +251,8 @@ export type PhoneEvent =
   | { type: 'sort-changed'; sort: 'proximity' | 'name' }
   /** User changed the max results preference. */
   | { type: 'max-results-changed'; maxResults: MaxResults }
+  /** User changed the language override for POI/wiki/route requests. */
+  | { type: 'lang-changed'; lang: string | null }
   /** Sync to glasses started (kicked off by a settings change). */
   | { type: 'sync-started' }
   /** Sync completed successfully. */

@@ -245,6 +245,7 @@ export function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void
               sort: effect.settings.sort,
               maxResults: effect.settings.maxResults,
               manualLocation: effect.settings.manualLocation,
+              lang: effect.settings.lang,
             },
           }),
         )

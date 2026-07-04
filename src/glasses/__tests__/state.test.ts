@@ -926,6 +926,68 @@ describe('settings-changed', () => {
     })
     expect(result.effects).toEqual([{ type: 'fetch-pois', offset: 0, mode: 'replace' }])
   })
+
+  // ── Task 18 (L8): lang must trigger a refetch, and must not be
+  // silently absorbed by the units-only skip path ──────────────────────
+
+  it('re-fetches POIs when only lang actually changed (not a display-only field)', () => {
+    const state = { ...INITIAL_STATE, settings: DEFAULT_SETTINGS }
+    const result = reduce(state, {
+      type: 'settings-changed',
+      settings: {
+        radiusMiles: DEFAULT_SETTINGS.radiusMiles,
+        categories: [...DEFAULT_SETTINGS.categories],
+        units: DEFAULT_SETTINGS.units,
+        sort: DEFAULT_SETTINGS.sort,
+        maxResults: DEFAULT_SETTINGS.maxResults,
+        manualLocation: DEFAULT_SETTINGS.manualLocation,
+        lang: 'ja',
+      },
+    })
+    expect(result.effects).toEqual([{ type: 'fetch-pois', offset: 0, mode: 'replace' }])
+    expect(result.state.settings.lang).toBe('ja')
+  })
+
+  it('does not re-fetch when a full snapshot is resent with lang unchanged too (in addition to units)', () => {
+    const state = { ...INITIAL_STATE, settings: { ...DEFAULT_SETTINGS, lang: 'es' } }
+    const result = reduce(state, {
+      type: 'settings-changed',
+      settings: {
+        radiusMiles: DEFAULT_SETTINGS.radiusMiles,
+        categories: [...DEFAULT_SETTINGS.categories],
+        units: 'metric',
+        sort: DEFAULT_SETTINGS.sort,
+        maxResults: DEFAULT_SETTINGS.maxResults,
+        manualLocation: DEFAULT_SETTINGS.manualLocation,
+        lang: 'es', // unchanged
+      },
+    })
+    expect(result.effects).toEqual([])
+  })
+
+  it('regression: a simultaneous units + lang change must NOT be misclassified as "only units changed"', () => {
+    // Guards the gap that would exist if `lang` were left out of the
+    // onlyUnitsChanged conjunction: this is exactly the shape of the very
+    // first settings-hydrated broadcast after boot when a user has
+    // previously persisted both a non-default units AND a non-default
+    // lang — every other field here matches DEFAULT_SETTINGS.
+    const state = { ...INITIAL_STATE, settings: DEFAULT_SETTINGS }
+    const result = reduce(state, {
+      type: 'settings-changed',
+      settings: {
+        radiusMiles: DEFAULT_SETTINGS.radiusMiles,
+        categories: [...DEFAULT_SETTINGS.categories],
+        units: 'metric',
+        sort: DEFAULT_SETTINGS.sort,
+        maxResults: DEFAULT_SETTINGS.maxResults,
+        manualLocation: DEFAULT_SETTINGS.manualLocation,
+        lang: 'de',
+      },
+    })
+    expect(result.effects).toEqual([{ type: 'fetch-pois', offset: 0, mode: 'replace' }])
+    expect(result.state.settings.units).toBe('metric')
+    expect(result.state.settings.lang).toBe('de')
+  })
 })
 
 // ─── H2: retry no longer dead-ends for route/wiki failures ────────────

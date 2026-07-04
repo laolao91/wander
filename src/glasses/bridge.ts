@@ -257,29 +257,7 @@ export async function initGlasses(): Promise<void> {
   // dispatches 'wander-settings-changed'. We apply them here so the next
   // fetch (background or user-triggered) uses the updated values.
   const handleSettingsChanged = (e: globalThis.Event) => {
-    const { radiusMiles, categories, units, sort, maxResults, manualLocation } = (
-      e as CustomEvent<{
-        radiusMiles: number
-        categories: string[]
-        units?: 'imperial' | 'metric'
-        sort?: 'proximity' | 'name'
-        maxResults?: number
-        manualLocation?: { lat: number; lng: number } | null
-      }>
-    ).detail
-    dispatch({
-      type: 'settings-changed',
-      settings: {
-        radiusMiles,
-        categories: categories as import('./api').Category[],
-        ...(units !== undefined ? { units } : {}),
-        ...(sort !== undefined ? { sort } : {}),
-        ...(maxResults === 10 || maxResults === 15 || maxResults === 20 ? { maxResults } : {}),
-        // Forward manual location override — undefined means the field wasn't
-        // included in the event (old sender), null means "cleared, use GPS".
-        ...(manualLocation !== undefined ? { manualLocation: manualLocation ?? null } : {}),
-      },
-    })
+    dispatch(parseSettingsChangedEvent(e))
   }
   if (typeof window !== 'undefined') {
     window.addEventListener('wander-settings-changed', handleSettingsChanged)
@@ -413,6 +391,47 @@ async function pushMinimap(
 }
 
 // ─── Event translation ──────────────────────────────────────────────────
+
+/**
+ * Translate the phone's `wander-settings-changed` CustomEvent (dispatched
+ * by App.tsx's `broadcast-settings` effect runner) into a `settings-changed`
+ * reducer event. Exported (same rationale as `translateGlassesEvent` below)
+ * so this can be unit-tested directly instead of only reachable through
+ * `initGlasses()`'s unexported `handleSettingsChanged` closure.
+ *
+ * `radiusMiles`/`categories` are unconditional (always sent); the rest are
+ * optional so an old sender (pre-dating a given field) doesn't clobber the
+ * glasses' current value for that field — `undefined` means "field absent
+ * from this event," `null` (where applicable) means "explicitly cleared."
+ */
+export function parseSettingsChangedEvent(e: globalThis.Event): Event {
+  const { radiusMiles, categories, units, sort, maxResults, manualLocation, lang } = (
+    e as CustomEvent<{
+      radiusMiles: number
+      categories: string[]
+      units?: 'imperial' | 'metric'
+      sort?: 'proximity' | 'name'
+      maxResults?: number
+      manualLocation?: { lat: number; lng: number } | null
+      lang?: string | null
+    }>
+  ).detail
+  return {
+    type: 'settings-changed',
+    settings: {
+      radiusMiles,
+      categories: categories as import('./api').Category[],
+      ...(units !== undefined ? { units } : {}),
+      ...(sort !== undefined ? { sort } : {}),
+      ...(maxResults === 10 || maxResults === 15 || maxResults === 20 ? { maxResults } : {}),
+      // Forward manual location override — undefined means the field wasn't
+      // included in the event (old sender), null means "cleared, use GPS".
+      ...(manualLocation !== undefined ? { manualLocation: manualLocation ?? null } : {}),
+      // Same undefined/null convention as manualLocation above.
+      ...(lang !== undefined ? { lang: lang ?? null } : {}),
+    },
+  }
+}
 
 /**
  * Map the SDK's physical event into one (or zero) reducer events.

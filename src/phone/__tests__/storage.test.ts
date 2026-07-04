@@ -21,6 +21,7 @@ describe('saveSettings → loadSettings round-trip', () => {
       sort: 'proximity',
       maxResults: 20,
       manualLocation: null,
+      lang: null,
     }
     await saveSettings(kv, original)
     const loaded = await loadSettings(kv)
@@ -36,6 +37,7 @@ describe('saveSettings → loadSettings round-trip', () => {
       sort: 'proximity',
       maxResults: 20,
       manualLocation: null,
+      lang: null,
     }
     await saveSettings(kv, original)
     const loaded = await loadSettings(kv)
@@ -52,6 +54,7 @@ describe('saveSettings → loadSettings round-trip', () => {
       sort: 'proximity',
       maxResults: 20,
       manualLocation: { label: 'Times Square, Manhattan, New York', lat: 40.758, lng: -73.9855 },
+      lang: null,
     }
     await saveSettings(kv, original)
     const loaded = await loadSettings(kv)
@@ -253,6 +256,29 @@ function createFakeBridge(
   }
 }
 
+// ─── lang persistence ──────────────────────────────────────────────────
+
+describe('lang persistence', () => {
+  it('persists and loads lang', async () => {
+    const kv = createMemoryKVStore()
+    await saveSettings(kv, { ...DEFAULT_SETTINGS, lang: 'es' })
+    const loaded = await loadSettings(kv)
+    expect(loaded.lang).toBe('es')
+  })
+
+  it('defaults lang to null when missing', async () => {
+    const kv = createMemoryKVStore()
+    const loaded = await loadSettings(kv)
+    expect(loaded.lang).toBeNull()
+  })
+
+  it('rejects an unknown lang code back to null', async () => {
+    const kv = createMemoryKVStore({ wander_lang: 'xx-not-a-real-code' })
+    const loaded = await loadSettings(kv)
+    expect(loaded.lang).toBeNull()
+  })
+})
+
 describe('createBridgeKVStore', () => {
   it('maps the SDK empty-string result to null on missing keys', async () => {
     const bridge = createFakeBridge()
@@ -304,6 +330,7 @@ describe('createBridgeKVStore', () => {
       sort: 'proximity',
       maxResults: 20,
       manualLocation: null,
+      lang: null,
     }
     await saveSettings(kv, custom)
     expect(bridge.map.get(STORAGE_KEYS.radius)).toBe('0.25')

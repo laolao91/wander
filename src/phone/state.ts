@@ -58,6 +58,12 @@ export function reduce(state: PhoneState, event: PhoneEvent): ReduceResult {
       return withSettingsChange(state, nextSettings)
     }
 
+    case 'lang-changed': {
+      if (state.settings.lang === event.lang) return noop(state)
+      const nextSettings: Settings = { ...state.settings, lang: event.lang }
+      return withSettingsChange(state, nextSettings)
+    }
+
     case 'max-results-changed': {
       if (state.settings.maxResults === event.maxResults) return noop(state)
       const nextSettings: Settings = { ...state.settings, maxResults: event.maxResults }

@@ -66,6 +66,7 @@ describe('settings-hydrated', () => {
       sort: 'name' as const,
       maxResults: 10 as const,
       manualLocation: null,
+      lang: null,
     }
     const result = reduce(INITIAL_STATE, { type: 'settings-hydrated', settings: loaded })
     const broadcast = result.effects.find((e) => e.type === 'broadcast-settings')
@@ -228,6 +229,35 @@ describe('units-changed', () => {
     const result = reduce(state, { type: 'units-changed', units: 'metric' })
     expect(result.state).toBe(state)
     expect(result.effects).toHaveLength(0)
+  })
+})
+
+// ─── Language ─────────────────────────────────────────────────────────
+
+describe('lang-changed', () => {
+  it('lang-changed updates settings and broadcasts (but does not request-location)', () => {
+    const result = reduce(INITIAL_STATE, { type: 'lang-changed', lang: 'fr' })
+    expect(result.state.settings.lang).toBe('fr')
+    const broadcast = result.effects.find((e) => e.type === 'broadcast-settings')
+    expect(broadcast).toBeDefined()
+    if (broadcast?.type === 'broadcast-settings') {
+      expect(broadcast.settings.lang).toBe('fr')
+    }
+  })
+
+  it('lang-changed is a noop if the value is unchanged', () => {
+    const state = { ...INITIAL_STATE, settings: { ...INITIAL_STATE.settings, lang: 'fr' } }
+    const result = reduce(state, { type: 'lang-changed', lang: 'fr' })
+    expect(result.effects).toEqual([])
+  })
+
+  it('lang-changed mirrors units-changed: triggers sync + persist + broadcast + request-location', () => {
+    const { state: next, effects } = reduce(INITIAL_STATE, { type: 'lang-changed', lang: 'ja' })
+    expect(next.settings.lang).toBe('ja')
+    expect(next.syncStatus).toBe('syncing')
+    expect(effects.some((e) => e.type === 'persist-settings')).toBe(true)
+    expect(effects.some((e) => e.type === 'broadcast-settings')).toBe(true)
+    expect(effects.some((e) => e.type === 'request-location')).toBe(true)
   })
 })
 
