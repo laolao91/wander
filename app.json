@@ -20,5 +20,5 @@
       "desc": "Find points of interest near your current location"
     }
   ],
-  "supported_languages": ["en"]
+  "supported_languages": ["en", "de", "es", "fr", "gr", "he", "hu", "id", "it", "ja", "ne", "nl", "nb", "pl", "pt", "ro", "ru", "tr", "zh", "cz"]
 }
