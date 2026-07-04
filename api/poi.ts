@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { resolveLang } from './_lib/lang.js'
 import { applyCors } from './_lib/cors.js'
+import { haversine, bearing } from './_lib/geo.js'
 import { createRequire } from 'module'
 
 const _require = createRequire(import.meta.url)
@@ -523,29 +524,6 @@ function enrichDistance(p: LiteP, userLat: number, userLng: number): Poi {
     bearingDegrees: Math.round(bearing(userLat, userLng, p.lat, p.lng)),
     walkMinutes: Math.max(1, Math.round(distanceMeters / WALK_METERS_PER_MINUTE)),
   }
-}
-
-// ─── Math / utils ──────────────────────────────────────────────────────────
-
-function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371000
-  const toRad = (deg: number) => (deg * Math.PI) / 180
-  const dLat = toRad(lat2 - lat1)
-  const dLng = toRad(lng2 - lng1)
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)))
-}
-
-function bearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const toRad = (d: number) => (d * Math.PI) / 180
-  const dLng = toRad(lng2 - lng1)
-  const y = Math.sin(dLng) * Math.cos(toRad(lat2))
-  const x =
-    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
-    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng)
-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360
 }
 
 function parseCategories(raw: unknown): Set<Category> {
