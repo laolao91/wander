@@ -42,13 +42,15 @@ vi.mock('../tabs/NearbyTab', () => ({ NearbyTab: () => null }))
 vi.mock('../tabs/FavoritesTab', () => ({ FavoritesTab: () => null }))
 vi.mock('@evenrealities/even_hub_sdk', () => ({ waitForEvenAppBridge: vi.fn(() => Promise.reject(new Error('not available in tests'))) }))
 
-import { runEffect, requestLocationViaNavigatorOrBridge } from '../App'
+import { runEffect, requestLocationViaNavigatorOrBridge, resolveKvStore, kv } from '../App'
 import { sdkGeolocate } from '../../glasses/sdkLocation'
 import { bridgeGeolocate } from '../../glasses/appsBridge'
+import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk'
 import type { PhoneEvent } from '../types'
 
 const mockSdkGeolocate = vi.mocked(sdkGeolocate)
 const mockBridgeGeolocate = vi.mocked(bridgeGeolocate)
+const mockWaitForEvenAppBridge = vi.mocked(waitForEvenAppBridge)
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -279,5 +281,73 @@ describe('runEffect geocode-location', () => {
     fetchSpy.mockRestore()
     vi.unstubAllEnvs()
     vi.resetModules()
+  })
+})
+
+// ─── L1: bridge-backed settings storage (resolveKvStore) ───────────────────
+//
+// WANDER_BUILD_SPEC.md §17: "Storage: bridge.setLocalStorage() only —
+// browser localStorage unreliable in Flutter WebView." `resolveKvStore`
+// upgrades the module-level `kv` (imported live above, alongside `runEffect`
+// — an `export let` reassigned inside App.tsx, so this binding reflects
+// whatever App.tsx's internal variable currently points to) to a
+// bridge-backed store, gated on `flutter_inappwebview` the same way
+// main.tsx gates initGlasses().
+//
+// `window` is not declared as a global in this suite's `node` environment
+// (confirmed by the file-header comment above and the matching note in
+// src/glasses/__tests__/effects.test.ts) — stub it via `vi.stubGlobal`
+// before referencing it bare, same established pattern as the `navigator`
+// stubs elsewhere in this file.
+describe('resolveKvStore', () => {
+  beforeEach(() => {
+    mockWaitForEvenAppBridge.mockClear()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('resolves kv to a bridge-backed store when flutter_inappwebview is present and the bridge resolves', async () => {
+    vi.stubGlobal('window', {})
+    Object.defineProperty(window, 'flutter_inappwebview', { value: {}, configurable: true })
+    const fakeBridge = {
+      getLocalStorage: vi.fn().mockResolvedValue(''),
+      setLocalStorage: vi.fn().mockResolvedValue(true),
+    }
+    // `waitForEvenAppBridge` resolves to the SDK's full `EvenAppBridge`
+    // class; `resolveKvStore` only uses the get/setLocalStorage subset
+    // (`BridgeStorageFacade`), so the fake only needs to satisfy that
+    // narrower shape — cast past the wider declared type, same as
+    // storage.test.ts's `createBridgeKVStore` fakes do structurally.
+    mockWaitForEvenAppBridge.mockResolvedValueOnce(
+      fakeBridge as unknown as Awaited<ReturnType<typeof waitForEvenAppBridge>>,
+    )
+
+    await resolveKvStore()
+    await kv.set('probe', 'x')
+
+    expect(fakeBridge.setLocalStorage).toHaveBeenCalledWith('probe', 'x')
+  })
+
+  it('leaves kv untouched when flutter_inappwebview is absent (not running in the EvenHub host)', async () => {
+    vi.stubGlobal('window', {}) // no flutter_inappwebview property defined
+    const kvBefore = kv
+
+    await resolveKvStore()
+
+    expect(kv).toBe(kvBefore)
+    expect(mockWaitForEvenAppBridge).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the prior store without throwing when the bridge rejects', async () => {
+    vi.stubGlobal('window', {})
+    Object.defineProperty(window, 'flutter_inappwebview', { value: {}, configurable: true })
+    const kvBefore = kv
+    mockWaitForEvenAppBridge.mockRejectedValueOnce(new Error('no bridge'))
+
+    await expect(resolveKvStore()).resolves.toBeUndefined()
+
+    expect(kv).toBe(kvBefore)
   })
 })

@@ -20,8 +20,12 @@
  *   changes. App listens and shows a coloured dot in the header.
  *
  * Boot sequence:
- *   1. loadSettings(kv)       → settings-hydrated
- *   2. loadNearbyCache(kv)    → nearby-pois-loaded (stale) if present
+ *   1. resolveKvStore()       → upgrades `kv` to bridge-backed storage when
+ *                                running inside the EvenHub host (§17); the
+ *                                two reads below always await this first so
+ *                                they never read from a stale/wrong store.
+ *   2. loadSettings(kv)       → settings-hydrated
+ *   3. loadNearbyCache(kv)    → nearby-pois-loaded (stale) if present
  *      NearbyTab mounts → auto-dispatches nearby-refresh-requested if idle
  */
 
@@ -32,8 +36,9 @@ import {
   saveSettings,
   saveNearbyCache,
   loadNearbyCache,
+  createBridgeKVStore,
 } from './storage'
-import type { KVStore } from './storage'
+import type { KVStore, BridgeStorageFacade } from './storage'
 import type { PhoneEvent, PhoneEffect, PhoneState } from './types'
 import { categoryIdsToCategories } from './types'
 import { fetchPois, API_BASE } from '../glasses/api'
@@ -68,10 +73,38 @@ function createBrowserKVStore(): KVStore {
   }
 }
 
-const kv: KVStore =
+export let kv: KVStore =
   typeof window !== 'undefined'
     ? createBrowserKVStore()
     : { get: async () => null, set: async () => {} }
+
+/**
+ * Upgrade `kv` to a bridge-backed store per WANDER_BUILD_SPEC.md §17
+ * ("Storage: bridge.setLocalStorage() only — browser localStorage
+ * unreliable in Flutter WebView") when running inside the real EvenHub
+ * host. Gated the same way main.tsx gates initGlasses() — only attempted
+ * when `flutter_inappwebview` is present, so this never runs in a bare
+ * browser/dev/test context. Falls back to the existing browser store on
+ * any failure (old host SDK, bridge unavailable, rejected promise) —
+ * this can only match-or-improve on today's behavior, never regress it.
+ * Awaited by the boot effect before the first loadSettings/loadNearbyCache
+ * call so hydration always reads from whichever store is actually active
+ * (see Wander_v2_Research.md L1).
+ */
+export async function resolveKvStore(): Promise<void> {
+  if (
+    typeof window === 'undefined' ||
+    !Object.prototype.hasOwnProperty.call(window, 'flutter_inappwebview')
+  ) {
+    return
+  }
+  try {
+    const bridge = (await waitForEvenAppBridge()) as BridgeStorageFacade
+    kv = createBridgeKVStore(bridge)
+  } catch (err) {
+    console.warn('[wander][phone] bridge KV store unavailable, using localStorage', err)
+  }
+}
 
 // ─── Effect runner ────────────────────────────────────────────────────────
 
@@ -366,9 +399,20 @@ export function App() {
   }
   const dispatch = (e: PhoneEvent) => dispatchRef.current(e)
 
-  // Boot: load settings then check stale nearby cache.
+  // Boot: resolve which KV store is active (bridge vs. browser — see
+  // resolveKvStore's doc comment), THEN load settings and check stale
+  // nearby cache. The `ready` promise is awaited by both chains before
+  // either reads `kv`, so the very first boot-time read and all later
+  // writes (persist-settings, cache-nearby-pois) always agree on which
+  // store is active — resolving kv only after the first read would
+  // otherwise split the boot read from later writes onto different
+  // stores (the same class of split-brain bug as H1, just in the
+  // storage layer instead of the settings-broadcast layer).
   useEffect(() => {
-    loadSettings(kv)
+    const ready = resolveKvStore()
+
+    ready
+      .then(() => loadSettings(kv))
       .then((settings) => {
         dispatchRef.current({ type: 'settings-hydrated', settings })
       })
@@ -376,7 +420,8 @@ export function App() {
         console.warn('[wander][phone] loadSettings failed, using defaults', err)
       })
 
-    loadNearbyCache(kv)
+    ready
+      .then(() => loadNearbyCache(kv))
       .then((cached) => {
         if (cached) {
           dispatchRef.current({
