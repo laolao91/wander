@@ -226,7 +226,7 @@ export async function initGlasses(): Promise<void> {
 
   // Wire glasses events → reducer events.
   const unsubscribe = bridge.onEvenHubEvent((evt) => {
-    translateGlassesEvent(evt, state, dispatch, bridge)
+    translateGlassesEvent(evt, state, dispatch)
   })
 
   // G2 connection status → phone UI.
@@ -424,10 +424,6 @@ export function translateGlassesEvent(
   evt: EvenHubEvent,
   state: AppState,
   dispatch: (e: Event) => void,
-  // Kept in the signature for test compatibility — callers may pass the
-  // bridge but translateGlassesEvent no longer calls it directly. Exit
-  // flows through the 'back' event → 'exit-app' effect → exitApp dep.
-  _bridge?: Pick<EvenAppBridge, 'shutDownPageContainer'>,
 ): void {
   // Phase 0 diagnostic — captures source (list/text/sys), eventType, and
   // full payload so we can see what real hardware is sending vs the

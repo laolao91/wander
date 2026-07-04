@@ -79,7 +79,6 @@ describe('translateGlassesEvent — listEvent', () => {
       listEvt(OsEventTypeList.CLICK_EVENT, 3),
       poiListState(),
       dispatch,
-      makeBridge(),
     )
     expect(dispatch).toHaveBeenCalledWith({ type: 'tap', itemIndex: 3 })
   })
@@ -90,14 +89,12 @@ describe('translateGlassesEvent — listEvent', () => {
       listEvt(OsEventTypeList.SCROLL_TOP_EVENT),
       poiListState(),
       dispatch,
-      makeBridge(),
     )
     _resetBridgeEventState() // clear scroll cooldown between intentional calls
     translateGlassesEvent(
       listEvt(OsEventTypeList.SCROLL_BOTTOM_EVENT),
       poiListState(),
       dispatch,
-      makeBridge(),
     )
     expect(dispatch).toHaveBeenNthCalledWith(1, { type: 'cursor-up' })
     expect(dispatch).toHaveBeenNthCalledWith(2, { type: 'cursor-down' })
@@ -110,7 +107,6 @@ describe('translateGlassesEvent — listEvent', () => {
       listEvt(OsEventTypeList.DOUBLE_CLICK_EVENT),
       poiListState(),
       dispatch,
-      bridge,
     )
     expect(dispatch).toHaveBeenCalledWith({ type: 'back' })
     expect(bridge.shutDownPageContainer).not.toHaveBeenCalled()
@@ -124,7 +120,6 @@ describe('translateGlassesEvent — text/sys events', () => {
       textEvt(OsEventTypeList.CLICK_EVENT),
       detailState(),
       dispatch,
-      makeBridge(),
     )
     expect(dispatch).toHaveBeenCalledWith({ type: 'tap' })
   })
@@ -135,14 +130,12 @@ describe('translateGlassesEvent — text/sys events', () => {
       textEvt(OsEventTypeList.SCROLL_TOP_EVENT),
       detailState(),
       dispatch,
-      makeBridge(),
     )
     _resetBridgeEventState()
     translateGlassesEvent(
       textEvt(OsEventTypeList.SCROLL_BOTTOM_EVENT),
       detailState(),
       dispatch,
-      makeBridge(),
     )
     expect(dispatch).toHaveBeenNthCalledWith(1, { type: 'cursor-up' })
     expect(dispatch).toHaveBeenNthCalledWith(2, { type: 'cursor-down' })
@@ -155,7 +148,6 @@ describe('translateGlassesEvent — text/sys events', () => {
       textEvt(OsEventTypeList.DOUBLE_CLICK_EVENT),
       detailState(),
       dispatch,
-      bridge,
     )
     expect(dispatch).toHaveBeenCalledWith({ type: 'back' })
     expect(bridge.shutDownPageContainer).not.toHaveBeenCalled()
@@ -168,7 +160,6 @@ describe('translateGlassesEvent — text/sys events', () => {
       textEvt(OsEventTypeList.DOUBLE_CLICK_EVENT),
       { ...INITIAL_STATE, screen: { name: 'ERROR_LOCATION', message: 'x' } },
       dispatch,
-      bridge,
     )
     expect(dispatch).toHaveBeenCalledWith({ type: 'back' })
     expect(bridge.shutDownPageContainer).not.toHaveBeenCalled()
@@ -176,7 +167,7 @@ describe('translateGlassesEvent — text/sys events', () => {
 
   it('ignores events with no payload', () => {
     const dispatch = vi.fn<(e: Event) => void>()
-    translateGlassesEvent({}, detailState(), dispatch, makeBridge())
+    translateGlassesEvent({}, detailState(), dispatch)
     expect(dispatch).not.toHaveBeenCalled()
   })
 })
@@ -191,7 +182,6 @@ describe('translateGlassesEvent — Phase 1 fixes', () => {
       { listEvent: new List_ItemEvent({ currentSelectItemIndex: 2 }) },
       poiListState(),
       dispatch,
-      makeBridge(),
     )
     expect(dispatch).toHaveBeenCalledWith({ type: 'tap', itemIndex: 2 })
   })
@@ -202,7 +192,6 @@ describe('translateGlassesEvent — Phase 1 fixes', () => {
       { textEvent: new Text_ItemEvent({}) },
       detailState(),
       dispatch,
-      makeBridge(),
     )
     expect(dispatch).toHaveBeenCalledWith({ type: 'tap' })
   })
@@ -213,7 +202,6 @@ describe('translateGlassesEvent — Phase 1 fixes', () => {
       { sysEvent: new Sys_ItemEvent({}) },
       detailState(),
       dispatch,
-      makeBridge(),
     )
     expect(dispatch).toHaveBeenCalledWith({ type: 'tap' })
   })
@@ -224,7 +212,6 @@ describe('translateGlassesEvent — Phase 1 fixes', () => {
       textEvt(OsEventTypeList.SCROLL_BOTTOM_EVENT),
       detailState(),
       dispatch,
-      makeBridge(),
     )
     // Intentionally NO reset — simulate a boundary bounce firing twice
     // back-to-back within the cooldown window.
@@ -232,7 +219,6 @@ describe('translateGlassesEvent — Phase 1 fixes', () => {
       textEvt(OsEventTypeList.SCROLL_BOTTOM_EVENT),
       detailState(),
       dispatch,
-      makeBridge(),
     )
     expect(dispatch).toHaveBeenCalledTimes(1)
     expect(dispatch).toHaveBeenCalledWith({ type: 'cursor-down' })
@@ -244,13 +230,11 @@ describe('translateGlassesEvent — Phase 1 fixes', () => {
       listEvt(OsEventTypeList.SCROLL_TOP_EVENT),
       poiListState(),
       dispatch,
-      makeBridge(),
     )
     translateGlassesEvent(
       listEvt(OsEventTypeList.SCROLL_BOTTOM_EVENT),
       poiListState(),
       dispatch,
-      makeBridge(),
     )
     expect(dispatch).toHaveBeenCalledTimes(1)
     expect(dispatch).toHaveBeenCalledWith({ type: 'cursor-up' })
@@ -274,7 +258,6 @@ describe('translateGlassesEvent — Phase 1 fixes', () => {
         } as any,
       },
       dispatch,
-      makeBridge(),
     )
     expect(dispatch).toHaveBeenCalledWith({ type: 'back' })
   })
@@ -293,7 +276,6 @@ describe('translateGlassesEvent — Phase 1 fixes', () => {
         } as any,
       },
       dispatch,
-      makeBridge(),
     )
     expect(dispatch).toHaveBeenCalledWith({ type: 'back' })
   })
@@ -309,7 +291,6 @@ describe('translateGlassesEvent — Phase 1 fixes', () => {
       },
       detailState(),
       dispatch,
-      makeBridge(),
     )
     expect(dispatch).toHaveBeenCalledWith({ type: 'tap' })
   })
@@ -327,7 +308,6 @@ describe('manual back-tap detector', () => {
       textEvt(OsEventTypeList.CLICK_EVENT),
       detailState(),
       dispatch,
-      makeBridge(),
     )
     expect(dispatch).toHaveBeenCalledTimes(1)
     expect(dispatch).toHaveBeenCalledWith({ type: 'tap' })
@@ -336,9 +316,9 @@ describe('manual back-tap detector', () => {
   it('two rapid clicks on a text screen: click 1 → tap, click 2 → back only (tap suppressed)', () => {
     const dispatch = vi.fn<(e: Event) => void>()
     // Click 1
-    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch)
     // Click 2 (immediate — well within 350ms window)
-    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch)
 
     // Call 1: tap (click 1)
     expect(dispatch).toHaveBeenNthCalledWith(1, { type: 'tap' })
@@ -349,8 +329,8 @@ describe('manual back-tap detector', () => {
 
   it('two rapid clicks on a list screen: click 1 → tap+itemIndex, click 2 → back only', () => {
     const dispatch = vi.fn<(e: Event) => void>()
-    translateGlassesEvent(listEvt(OsEventTypeList.CLICK_EVENT, 1), poiListState(), dispatch, makeBridge())
-    translateGlassesEvent(listEvt(OsEventTypeList.CLICK_EVENT, 1), poiListState(), dispatch, makeBridge())
+    translateGlassesEvent(listEvt(OsEventTypeList.CLICK_EVENT, 1), poiListState(), dispatch)
+    translateGlassesEvent(listEvt(OsEventTypeList.CLICK_EVENT, 1), poiListState(), dispatch)
 
     expect(dispatch).toHaveBeenNthCalledWith(1, { type: 'tap', itemIndex: 1 })
     expect(dispatch).toHaveBeenNthCalledWith(2, { type: 'back' })
@@ -361,9 +341,9 @@ describe('manual back-tap detector', () => {
     // Simulates a user who triple-taps.
     // back fires on click 2; click 3 starts a fresh sequence.
     const dispatch = vi.fn<(e: Event) => void>()
-    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
-    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
-    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch)
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch)
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch)
 
     // Calls: tap (click 1), back (click 2, tap suppressed), tap (click 3 starts fresh)
     const calls = dispatch.mock.calls.map((c) => c[0])
@@ -375,8 +355,8 @@ describe('manual back-tap detector', () => {
     // SDK drops the middle click of a three-tap gesture — we receive 2.
     // Since 2 >= 2, back still fires.
     const dispatch = vi.fn<(e: Event) => void>()
-    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
-    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch)
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch)
 
     const calls = dispatch.mock.calls.map((c) => (c[0] as Event).type)
     expect(calls).toContain('back')
@@ -386,10 +366,10 @@ describe('manual back-tap detector', () => {
     // We can't control Date.now() directly in node, but _resetBridgeEventState
     // resets _lastClickAt to 0 — simulating an expired window.
     const dispatch = vi.fn<(e: Event) => void>()
-    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch)
     // Simulate time passing by resetting state (same effect as window expiry)
     _resetBridgeEventState()
-    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch)
 
     // Both clicks are treated as first-taps of their own sequences.
     const calls = dispatch.mock.calls.map((c) => (c[0] as Event).type)
@@ -400,13 +380,13 @@ describe('manual back-tap detector', () => {
   it('after a detected back-tap, the next single click does NOT re-trigger back', () => {
     // _clickCount resets to 0 after firing — the next tap starts fresh.
     const dispatch = vi.fn<(e: Event) => void>()
-    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
-    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch)
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch)
     // At this point back has fired and count is reset.
 
     dispatch.mockClear()
     // A third tap within the window: count goes from 0 → 1, not >= 2 → no back.
-    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch, makeBridge())
+    translateGlassesEvent(textEvt(OsEventTypeList.CLICK_EVENT), detailState(), dispatch)
     expect(dispatch).toHaveBeenCalledWith({ type: 'tap' })
     expect(dispatch).not.toHaveBeenCalledWith({ type: 'back' })
   })
