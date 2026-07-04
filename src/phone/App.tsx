@@ -36,7 +36,7 @@ import {
 import type { KVStore } from './storage'
 import type { PhoneEvent, PhoneEffect, PhoneState } from './types'
 import { categoryIdsToCategories } from './types'
-import { fetchPois } from '../glasses/api'
+import { fetchPois, API_BASE } from '../glasses/api'
 import { bridgeGeolocate } from '../glasses/appsBridge'
 import { sdkGeolocate } from '../glasses/sdkLocation'
 import { SettingsTab } from './tabs/SettingsTab'
@@ -171,7 +171,7 @@ export function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void
     }
 
     case 'geocode-location':
-      fetch(`/api/geocode?lat=${effect.lat}&lng=${effect.lng}`)
+      fetch(`${API_BASE}/geocode?lat=${effect.lat}&lng=${effect.lng}`)
         .then((r) => r.json())
         .then((data: { label?: string }) => {
           if (typeof data.label === 'string') {

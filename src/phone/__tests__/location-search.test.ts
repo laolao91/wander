@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { searchLocations } from '../lib/geocoding'
 import type { ManualLocation } from '../types'
+import { API_BASE } from '../../glasses/api'
 
 const MOCK_RESULTS: ManualLocation[] = [
   { label: 'Times Square, Midtown Manhattan, Manhattan', lat: 40.758, lng: -73.9855 },
@@ -54,5 +55,15 @@ describe('searchLocations', () => {
     } as Response)
 
     await expect(searchLocations('Times Square')).rejects.toThrow()
+  })
+
+  it('calls /api/geocode with the absolute API_BASE, not a relative path', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [] }),
+    } as Response)
+    await searchLocations('times square')
+    expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining(`${API_BASE}/geocode?q=`))
+    fetchSpy.mockRestore()
   })
 })

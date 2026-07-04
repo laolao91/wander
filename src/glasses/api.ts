@@ -16,7 +16,7 @@
 // is given a relative URL against a non-http(s) base (e.g. a local file or
 // EvenHub's internal scheme). Use the absolute URL in production builds;
 // keep relative in dev so Vite's proxy still works.
-const API_BASE = import.meta.env.DEV
+export const API_BASE = import.meta.env.DEV
   ? '/api'
   : 'https://wander-six-phi.vercel.app/api'
 // Field-test 2026-04-25 §3.1: glasses observed "Fetching nearby

@@ -45,6 +45,7 @@ vi.mock('@evenrealities/even_hub_sdk', () => ({ waitForEvenAppBridge: vi.fn(() =
 import { runEffect, requestLocationViaNavigatorOrBridge } from '../App'
 import { sdkGeolocate } from '../../glasses/sdkLocation'
 import { bridgeGeolocate } from '../../glasses/appsBridge'
+import { API_BASE } from '../../glasses/api'
 import type { PhoneEvent } from '../types'
 
 const mockSdkGeolocate = vi.mocked(sdkGeolocate)
@@ -176,5 +177,18 @@ describe('requestLocationViaNavigatorOrBridge', () => {
     expect(calls).toEqual([
       { type: 'location-failed', message: 'Geolocation not supported on this device.' },
     ])
+  })
+})
+
+// ─── geocode-location effect ───────────────────────────────────────────────
+
+describe('runEffect geocode-location', () => {
+  it('geocode-location effect calls /api/geocode with the absolute API_BASE', () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      json: async () => ({ label: 'Somewhere' }),
+    } as Response)
+    runEffect({ type: 'geocode-location', lat: 1, lng: 2 }, vi.fn())
+    expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining(`${API_BASE}/geocode?lat=`))
+    fetchSpy.mockRestore()
   })
 })
