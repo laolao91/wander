@@ -99,19 +99,23 @@ describe('runEffect request-location — manual location short-circuit', () => {
 
 describe('runEffect request-location — sdkGeolocate primary source', () => {
   it('dispatches location-acquired with source "native" on an SDK fix, without touching navigator/bridge', async () => {
+    vi.useFakeTimers()
     mockSdkGeolocate.mockResolvedValue({ lat: 35.1, lng: -80.1 })
     const { dispatch, calls } = dispatchSpy()
 
     runEffect({ type: 'request-location', manualLocation: null }, dispatch)
 
-    // sdkGeolocate() is async — flush microtasks.
-    await Promise.resolve()
-    await Promise.resolve()
+    // The network-triggering path (M6) is now debounced 500ms before it
+    // calls sdkGeolocate() — advance past the debounce window, and use the
+    // *Async* timer-advance variant so the subsequent promise microtask
+    // (sdkGeolocate() resolving) is also flushed before we assert.
+    await vi.advanceTimersByTimeAsync(500)
 
     expect(calls).toEqual([
       { type: 'location-acquired', lat: 35.1, lng: -80.1, source: 'native' },
     ])
     expect(mockBridgeGeolocate).not.toHaveBeenCalled()
+    vi.useRealTimers()
   })
 })
 
@@ -119,36 +123,38 @@ describe('runEffect request-location — sdkGeolocate primary source', () => {
 
 describe('runEffect request-location — sdkGeolocate empty falls through', () => {
   it('falls through to APPS Bridge (no navigator.geolocation in node env) and dispatches its fix', async () => {
+    vi.useFakeTimers()
     mockSdkGeolocate.mockResolvedValue(null)
     mockBridgeGeolocate.mockResolvedValue({ lat: 12.34, lng: 56.78 })
     const { dispatch, calls } = dispatchSpy()
 
     runEffect({ type: 'request-location', manualLocation: null }, dispatch)
 
-    await Promise.resolve()
-    await Promise.resolve()
-    await Promise.resolve()
+    // Debounced (M6) — advance past the 500ms window; *Async* variant also
+    // flushes the sdkGeolocate()/bridgeGeolocate() promise microtasks.
+    await vi.advanceTimersByTimeAsync(500)
 
     expect(mockBridgeGeolocate).toHaveBeenCalledTimes(1)
     expect(calls).toEqual([
       { type: 'location-acquired', lat: 12.34, lng: 56.78, source: 'bridge' },
     ])
+    vi.useRealTimers()
   })
 
   it('dispatches location-failed when both sdkGeolocate and APPS Bridge come back empty', async () => {
+    vi.useFakeTimers()
     mockSdkGeolocate.mockResolvedValue(null)
     mockBridgeGeolocate.mockResolvedValue(null)
     const { dispatch, calls } = dispatchSpy()
 
     runEffect({ type: 'request-location', manualLocation: null }, dispatch)
 
-    await Promise.resolve()
-    await Promise.resolve()
-    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(500)
 
     expect(calls).toEqual([
       { type: 'location-failed', message: 'Geolocation not supported on this device.' },
     ])
+    vi.useRealTimers()
   })
 })
 
@@ -200,6 +206,48 @@ describe('requestLocationViaNavigatorOrBridge', () => {
       expect.objectContaining({ type: 'location-failed' }),
     )
     vi.useRealTimers()
+  })
+})
+
+// ─── Settings-change debounce (M6) ─────────────────────────────────────────
+//
+// Note: unlike the brief's literal test text, this suite runs under
+// Vitest's `node` environment (vitest.config.ts), where `navigator.geolocation`
+// is `undefined` until a test stubs it (see the file-header comment and the
+// wall-clock-ceiling test above) — so `vi.spyOn(navigator.geolocation, ...)`
+// directly would throw here. This test instead stubs a fake
+// `navigator.geolocation.getCurrentPosition`, matching the established
+// pattern elsewhere in this file, and resolves `sdkGeolocate` to null so
+// the debounced call actually reaches that stub.
+
+describe('runEffect request-location — settings-change debounce', () => {
+  it('debounces rapid request-location effects so only the last one fires', async () => {
+    vi.useFakeTimers()
+    mockSdkGeolocate.mockResolvedValue(null)
+    const geolocateSpy = vi.fn()
+    vi.stubGlobal('navigator', { geolocation: { getCurrentPosition: geolocateSpy } })
+    const dispatch = vi.fn()
+
+    runEffect({ type: 'request-location', manualLocation: null }, dispatch)
+    runEffect({ type: 'request-location', manualLocation: null }, dispatch)
+    runEffect({ type: 'request-location', manualLocation: null }, dispatch)
+    expect(geolocateSpy).not.toHaveBeenCalled() // nothing fires immediately
+
+    // advanceTimersByTimeAsync (not the sync variant) also flushes the
+    // microtask from sdkGeolocate()'s resolved promise, so the debounced
+    // callback's fall-through to requestLocationViaNavigatorOrBridge
+    // actually runs before we assert.
+    await vi.advanceTimersByTimeAsync(500)
+    expect(geolocateSpy).toHaveBeenCalledTimes(1) // only one, after the debounce window
+    vi.useRealTimers()
+  })
+
+  it('does not debounce a manual-location request-location (fires immediately, no network involved)', () => {
+    const dispatch = vi.fn()
+    runEffect({ type: 'request-location', manualLocation: { lat: 1, lng: 2, label: 'x' } }, dispatch)
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'location-acquired', source: 'manual' }),
+    )
   })
 })
 

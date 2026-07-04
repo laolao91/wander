@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { reduce, INITIAL_STATE, type AppState } from '../state'
+import { DEFAULT_SETTINGS } from '../screens/types'
 import type { Poi, RouteStep } from '../api'
 
 // ─── Fixtures ──────────────────────────────────────────────────────────
@@ -815,5 +816,35 @@ describe('NAV_ACTIVE step advancement and arrival', () => {
       type: 'position-updated', lat: 48.8600, lng: 2.2950, source: 'gps',
     })
     expect(result.state.screen).not.toBe(state.screen)
+  })
+})
+
+describe('settings-changed', () => {
+  it('does not re-fetch POIs when only units changed', () => {
+    const state = { ...INITIAL_STATE, settings: DEFAULT_SETTINGS }
+    const result = reduce(state, {
+      type: 'settings-changed',
+      settings: { units: 'metric' },
+    })
+    expect(result.effects).toEqual([])
+    expect(result.state.settings.units).toBe('metric')
+  })
+
+  it('still re-fetches POIs when radius (or any non-display-only field) changes', () => {
+    const state = { ...INITIAL_STATE, settings: DEFAULT_SETTINGS }
+    const result = reduce(state, {
+      type: 'settings-changed',
+      settings: { radiusMiles: 1.5 },
+    })
+    expect(result.effects).toEqual([{ type: 'fetch-pois', offset: 0, mode: 'replace' }])
+  })
+
+  it('re-fetches if units changes alongside another field', () => {
+    const state = { ...INITIAL_STATE, settings: DEFAULT_SETTINGS }
+    const result = reduce(state, {
+      type: 'settings-changed',
+      settings: { units: 'metric', radiusMiles: 1.5 },
+    })
+    expect(result.effects).toEqual([{ type: 'fetch-pois', offset: 0, mode: 'replace' }])
   })
 })

@@ -177,11 +177,21 @@ export function reduce(state: AppState, event: Event): ReducerResult {
     case 'position-updated':
       return onPositionUpdated(state, event.lat, event.lng, event.heading ?? null, event.source ?? 'gps')
 
-    case 'settings-changed':
+    case 'settings-changed': {
+      // Display-only fields don't affect what gets fetched (params, sort,
+      // limit) — skip the refetch when that's the only thing that changed,
+      // to avoid a burst of redundant fetches during rapid settings
+      // changes (Wander_v2_Research.md M6). `units` is the only such
+      // field today.
+      const DISPLAY_ONLY_KEYS = new Set(['units'])
+      const changedKeys = Object.keys(event.settings)
+      const isDisplayOnlyChange =
+        changedKeys.length > 0 && changedKeys.every((k) => DISPLAY_ONLY_KEYS.has(k))
       return {
         state: { ...state, settings: { ...state.settings, ...event.settings } },
-        effects: [{ type: 'fetch-pois', offset: 0, mode: 'replace' }],
+        effects: isDisplayOnlyChange ? [] : [{ type: 'fetch-pois', offset: 0, mode: 'replace' }],
       }
+    }
 
     case 'retry':
       return onRetry(state)

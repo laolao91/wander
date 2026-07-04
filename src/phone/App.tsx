@@ -175,6 +175,16 @@ export function requestLocationViaNavigatorOrBridge(dispatch: (e: PhoneEvent) =>
   )
 }
 
+// Rapid settings changes (e.g. dragging the radius slider) each
+// independently emit a `request-location` effect. Without debouncing,
+// each one fans out into a real geolocation lookup + POI/Wikipedia/
+// Overpass fetch chain (Wander_v2_Research.md M6). Only the
+// network-triggering path below is debounced — the manual-location and
+// DEV-mock short-circuits in the `request-location` case stay instant,
+// since they don't hit the network fan-out this exists to protect.
+const SETTINGS_LOCATION_DEBOUNCE_MS = 500
+let requestLocationDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
 export function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void): void {
   switch (effect.type) {
     case 'persist-settings':
@@ -244,13 +254,20 @@ export function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void
       // bridge unavailable, no fix, permission issue), in which case we
       // fall through to the existing navigator.geolocation → APPS Bridge
       // chain unchanged.
-      sdkGeolocate().then((fix) => {
-        if (fix) {
-          dispatch({ type: 'location-acquired', lat: fix.lat, lng: fix.lng, source: 'native' })
-          return
-        }
-        requestLocationViaNavigatorOrBridge(dispatch)
-      })
+      // Debounce the network-triggering path only (see comment above
+      // SETTINGS_LOCATION_DEBOUNCE_MS). The manual-location and DEV-mock
+      // short-circuits above already returned before reaching here.
+      if (requestLocationDebounceTimer) clearTimeout(requestLocationDebounceTimer)
+      requestLocationDebounceTimer = setTimeout(() => {
+        requestLocationDebounceTimer = null
+        sdkGeolocate().then((fix) => {
+          if (fix) {
+            dispatch({ type: 'location-acquired', lat: fix.lat, lng: fix.lng, source: 'native' })
+            return
+          }
+          requestLocationViaNavigatorOrBridge(dispatch)
+        })
+      }, SETTINGS_LOCATION_DEBOUNCE_MS)
       return
     }
 
