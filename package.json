@@ -14,7 +14,7 @@
     "test:watch": "vitest",
     "qr": "evenhub qr --http --port 5173",
     "simulator": "evenhub-simulator http://localhost:5173",
-    "pack": "npm test && npm run build && evenhub pack app.json dist -o wander-v$npm_package_version.ehpk"
+    "pack": "npm test && npm run build && node scripts/check-bundle-whitelist.mjs && evenhub pack app.json dist -o wander-v$npm_package_version.ehpk"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.11",
