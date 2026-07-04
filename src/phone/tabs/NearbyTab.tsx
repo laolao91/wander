@@ -15,6 +15,7 @@ import type { PhoneState, PhoneEvent, ManualLocation } from '../types'
 import type { Poi } from '../../glasses/api'
 import { LocationSearchForm } from '../components/LocationSearchForm'
 import { formatDistance } from '../utils/formatDistance'
+import { defaultOpenUrl } from '../../glasses/effects'
 
 // ─── Category display names (API → human label) ───────────────────────────
 
@@ -319,6 +320,10 @@ export function NearbyTab({ state, dispatch }: NearbyTabProps) {
                           target="_blank"
                           rel="noreferrer"
                           className="text-[12px] text-accent"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            defaultOpenUrl(mapsUrl(poi))
+                          }}
                         >
                           Open in Maps
                         </a>
@@ -328,6 +333,10 @@ export function NearbyTab({ state, dispatch }: NearbyTabProps) {
                             target="_blank"
                             rel="noreferrer"
                             className="text-[12px] text-accent"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              defaultOpenUrl(poi.websiteUrl!)
+                            }}
                           >
                             Website
                           </a>

@@ -281,7 +281,7 @@ export async function defaultGeolocate(): Promise<{ lat: number; lng: number } |
   return bridgeGeolocate()
 }
 
-function defaultOpenUrl(url: string): void {
+export function defaultOpenUrl(url: string): void {
   if (typeof window === 'undefined') return
   // Phase F (2026-04-26): try `_system` first — Cordova/Capacitor and
   // many WebView wrappers honor this target to escape the in-app

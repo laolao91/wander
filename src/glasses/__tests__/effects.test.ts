@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { EffectRunner, defaultGeolocate, defaultWatchPosition } from '../effects'
+import { EffectRunner, defaultGeolocate, defaultWatchPosition, defaultOpenUrl } from '../effects'
 import type { Event } from '../state'
 import { DEFAULT_SETTINGS } from '../screens/types'
 import * as api from '../api'
@@ -347,4 +347,51 @@ describe('defaultGeolocate / defaultWatchPosition', () => {
     expect(cancelSdkSpy).toHaveBeenCalledTimes(1)
     expect(clearWatchSpy).toHaveBeenCalledWith(42)
   })
+})
+
+// ─── defaultOpenUrl ────────────────────────────────────────────────────
+
+// NOTE: this project's vitest.config.ts runs in `environment: 'node'` (no
+// DOM), and confirmed directly (not assumed): `window` is not merely
+// `typeof window === 'undefined'`, it is not declared as a global
+// identifier at all here — referencing it bare (not via `typeof`) throws
+// `ReferenceError: window is not defined`. That's the same reason the
+// `defaultGeolocate`/`defaultWatchPosition` tests above stub `navigator`
+// via `vi.stubGlobal('navigator', {...})` before referencing it bare —
+// this block follows that same established pattern for `window`.
+describe('defaultOpenUrl', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('tries window.open with _system first, and does not fall back if it succeeds', () => {
+    vi.stubGlobal('window', { open: () => null })
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({} as Window)
+    defaultOpenUrl('https://example.com')
+    expect(openSpy).toHaveBeenCalledTimes(1)
+    expect(openSpy).toHaveBeenCalledWith('https://example.com', '_system', 'noopener,noreferrer')
+  })
+
+  it('falls back to _blank when _system is rejected (returns falsy)', () => {
+    vi.stubGlobal('window', { open: () => null })
+    const openSpy = vi.spyOn(window, 'open')
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce({} as Window)
+    defaultOpenUrl('https://example.com')
+    expect(openSpy).toHaveBeenCalledTimes(2)
+    expect(openSpy).toHaveBeenNthCalledWith(1, 'https://example.com', '_system', 'noopener,noreferrer')
+    expect(openSpy).toHaveBeenNthCalledWith(2, 'https://example.com', '_blank', 'noopener,noreferrer')
+  })
+
+  // Third case from the task brief — "does nothing if window is undefined
+  // (SSR/non-browser guard)" — is intentionally dropped per the brief's own
+  // conditional instruction. Confirmed above: in this suite's `node`
+  // environment, `window` is *already* undefined as a global by default,
+  // with zero stubbing, in every other test in this file. There is no way
+  // to construct a *distinct* "window is undefined" test case beyond what
+  // already implicitly holds everywhere else — attempting to name it would
+  // just re-assert the ambient default, not exercise anything new. The
+  // guard clause itself (`if (typeof window === 'undefined') return`) is a
+  // one-line no-op and is verified by inspection, per the brief's own note.
 })
