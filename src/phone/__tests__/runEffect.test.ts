@@ -70,6 +70,10 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs()
+  // The wall-clock-ceiling test below stubs the global `navigator` (same
+  // pattern as src/glasses/__tests__/effects.test.ts) — undo it here so it
+  // can't bleed into later tests in this file.
+  vi.unstubAllGlobals()
 })
 
 // ─── Manual-location short-circuit ─────────────────────────────────────────
@@ -176,6 +180,26 @@ describe('requestLocationViaNavigatorOrBridge', () => {
     expect(calls).toEqual([
       { type: 'location-failed', message: 'Geolocation not supported on this device.' },
     ])
+  })
+
+  it('falls back to location-failed if getCurrentPosition never calls back within the wall-clock ceiling', async () => {
+    vi.useFakeTimers()
+    // Same as the other cases in this describe block: the wall-clock
+    // timeout path falls through to APPS Bridge before giving up, so it
+    // needs a resolved value (empty, here) like every other bridge-reaching
+    // test in this file — otherwise bridgeGeolocate() returns undefined.
+    mockBridgeGeolocate.mockResolvedValue(null)
+    const neverResolves = vi.fn() // getCurrentPosition mock that never invokes success or error
+    vi.stubGlobal('navigator', {
+      geolocation: { getCurrentPosition: neverResolves },
+    })
+    const dispatch = vi.fn()
+    requestLocationViaNavigatorOrBridge(dispatch)
+    await vi.advanceTimersByTimeAsync(15_001)
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'location-failed' }),
+    )
+    vi.useRealTimers()
   })
 })
 

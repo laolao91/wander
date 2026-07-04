@@ -75,6 +75,15 @@ const kv: KVStore =
 
 // ─── Effect runner ────────────────────────────────────────────────────────
 
+// Wall-clock ceiling for the one-shot navigator.geolocation lookup. The
+// PositionOptions.timeout below is 10s, but on real G2 hardware the
+// WebView's getCurrentPosition has been observed to never fire either
+// callback — the "Finding your location..." screen hangs indefinitely with
+// the manual-location rescue form unreachable. This outer race (mirroring
+// src/glasses/effects.ts's defaultGeolocate) guarantees dispatch always
+// hears back.
+const REQUEST_LOCATION_WALL_CLOCK_MS = 15000
+
 /**
  * Falls back to `navigator.geolocation` (then APPS Bridge on failure/
  * absence) when the Even Hub SDK location attempt comes back empty. This
@@ -96,41 +105,70 @@ export function requestLocationViaNavigatorOrBridge(dispatch: (e: PhoneEvent) =>
     })
     return
   }
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      dispatch({
-        type: 'location-acquired',
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        source: 'native',
-      })
-    },
-    (err) => {
-      // Map raw GeolocationPositionError codes to actionable messages.
-      // Code 1 (PERMISSION_DENIED) can fire on Android even when the user
-      // hasn't denied anything — EvenHub's prototype/sideload WebView
-      // doesn't always forward the host app's location permission into the
-      // WebView context. Production installs (via EvenHub store) resolve
-      // this. Code 2/3 are genuine device/timeout failures.
-      //
-      // Before surfacing a failure, try APPS Bridge — if the user has it
-      // installed and running, it sources GPS straight from Android,
-      // independent of the host WebView's permission forwarding.
+
+  // `settled` guards against a double-dispatch in the rare case where
+  // getCurrentPosition's own callback fires at nearly the same moment the
+  // wall clock does.
+  let settled = false
+  const settle = (fn: () => void) => {
+    if (settled) return
+    settled = true
+    fn()
+  }
+
+  const wallClock = setTimeout(() => {
+    settle(() => {
       bridgeGeolocate().then((fix) => {
         if (fix) {
           dispatch({ type: 'location-acquired', lat: fix.lat, lng: fix.lng, source: 'bridge' })
           return
         }
-        let message: string
-        if (err.code === 1 /* PERMISSION_DENIED */) {
-          message =
-            'Location permission is required. If you\'ve already granted it, try force-quitting and reopening the app.'
-        } else if (err.code === 2 /* POSITION_UNAVAILABLE */) {
-          message = 'Your location couldn\'t be determined. Make sure location services are enabled.'
-        } else {
-          message = 'Location request timed out. Check your location settings and try again.'
-        }
-        dispatch({ type: 'location-failed', message })
+        dispatch({ type: 'location-failed', message: 'Location request timed out. Check your location settings and try again.' })
+      })
+    })
+  }, REQUEST_LOCATION_WALL_CLOCK_MS)
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      settle(() => {
+        clearTimeout(wallClock)
+        dispatch({
+          type: 'location-acquired',
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          source: 'native',
+        })
+      })
+    },
+    (err) => {
+      settle(() => {
+        clearTimeout(wallClock)
+        // Map raw GeolocationPositionError codes to actionable messages.
+        // Code 1 (PERMISSION_DENIED) can fire on Android even when the user
+        // hasn't denied anything — EvenHub's prototype/sideload WebView
+        // doesn't always forward the host app's location permission into the
+        // WebView context. Production installs (via EvenHub store) resolve
+        // this. Code 2/3 are genuine device/timeout failures.
+        //
+        // Before surfacing a failure, try APPS Bridge — if the user has it
+        // installed and running, it sources GPS straight from Android,
+        // independent of the host WebView's permission forwarding.
+        bridgeGeolocate().then((fix) => {
+          if (fix) {
+            dispatch({ type: 'location-acquired', lat: fix.lat, lng: fix.lng, source: 'bridge' })
+            return
+          }
+          let message: string
+          if (err.code === 1 /* PERMISSION_DENIED */) {
+            message =
+              'Location permission is required. If you\'ve already granted it, try force-quitting and reopening the app.'
+          } else if (err.code === 2 /* POSITION_UNAVAILABLE */) {
+            message = 'Your location couldn\'t be determined. Make sure location services are enabled.'
+          } else {
+            message = 'Location request timed out. Check your location settings and try again.'
+          }
+          dispatch({ type: 'location-failed', message })
+        })
       })
     },
     { timeout: 10_000, maximumAge: 30_000 },
