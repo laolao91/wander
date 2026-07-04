@@ -188,8 +188,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log(
     '[poi] req',
     JSON.stringify({
-      lat,
-      lng,
+      lat: roundCoord(lat),
+      lng: roundCoord(lng),
       radiusMi,
       offset,
       enabled: Array.from(enabled),
@@ -568,6 +568,13 @@ function parseCategories(raw: unknown): Set<Category> {
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(Math.max(n, lo), hi)
+}
+
+// Rounds a coordinate to 2 decimal places (~1km precision) so server logs
+// don't retain full-precision user location tied to a timestamp. Used only
+// by the diagnostic log line above — not for any distance/geo calculations.
+export function roundCoord(n: number): number {
+  return Math.round(n * 100) / 100
 }
 
 function parseOpeningHours(raw: string | null): {
