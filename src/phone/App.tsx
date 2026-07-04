@@ -39,6 +39,7 @@ import { categoryIdsToCategories } from './types'
 import { fetchPois, API_BASE } from '../glasses/api'
 import { bridgeGeolocate } from '../glasses/appsBridge'
 import { sdkGeolocate } from '../glasses/sdkLocation'
+import { readDevMockCoords } from '../glasses/devMock'
 import { SettingsTab } from './tabs/SettingsTab'
 import { NearbyTab } from './tabs/NearbyTab'
 import { FavoritesTab } from './tabs/FavoritesTab'
@@ -193,10 +194,9 @@ export function runEffect(effect: PhoneEffect, dispatch: (e: PhoneEvent) => void
       // Dev simulator mock — reads VITE_MOCK_LAT/LNG from .env.local.
       // Tree-shaken out of production builds (import.meta.env.DEV = false).
       if (import.meta.env.DEV) {
-        const mockLat = parseFloat(import.meta.env.VITE_MOCK_LAT ?? '')
-        const mockLng = parseFloat(import.meta.env.VITE_MOCK_LNG ?? '')
-        if (!isNaN(mockLat) && !isNaN(mockLng)) {
-          dispatch({ type: 'location-acquired', lat: mockLat, lng: mockLng, source: 'native' })
+        const mock = readDevMockCoords()
+        if (mock) {
+          dispatch({ type: 'location-acquired', lat: mock.lat, lng: mock.lng, source: 'native' })
           return
         }
       }
