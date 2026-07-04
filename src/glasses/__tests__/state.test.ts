@@ -820,30 +820,109 @@ describe('NAV_ACTIVE step advancement and arrival', () => {
 })
 
 describe('settings-changed', () => {
-  it('does not re-fetch POIs when only units changed', () => {
+  // NOTE: bridge.ts's handleSettingsChanged always forwards the *complete*
+  // current Settings snapshot (radiusMiles/categories are unconditional;
+  // units/sort/maxResults/manualLocation are included whenever the phone's
+  // broadcast-settings effect fires, which always carries the full
+  // Settings object). So a real `settings-changed` event's `.settings`
+  // payload has all 6 keys present on essentially every dispatch,
+  // regardless of what the user actually touched — these tests exercise
+  // that realistic full-snapshot shape (not sparse deltas) so they catch
+  // regressions to a key-presence check, which can never distinguish
+  // "radius resent unchanged" from "radius actually changed".
+
+  it('does not re-fetch POIs when only units actually changed (full snapshot resent, same values otherwise)', () => {
     const state = { ...INITIAL_STATE, settings: DEFAULT_SETTINGS }
     const result = reduce(state, {
       type: 'settings-changed',
-      settings: { units: 'metric' },
+      settings: {
+        radiusMiles: DEFAULT_SETTINGS.radiusMiles,
+        // Fresh array, not the same reference, so this can only pass via
+        // a value comparison.
+        categories: [...DEFAULT_SETTINGS.categories],
+        units: 'metric',
+        sort: DEFAULT_SETTINGS.sort,
+        maxResults: DEFAULT_SETTINGS.maxResults,
+        manualLocation: DEFAULT_SETTINGS.manualLocation,
+      },
     })
     expect(result.effects).toEqual([])
     expect(result.state.settings.units).toBe('metric')
   })
 
-  it('still re-fetches POIs when radius (or any non-display-only field) changes', () => {
+  it('still re-fetches POIs when units changes alongside a real field change (radius)', () => {
     const state = { ...INITIAL_STATE, settings: DEFAULT_SETTINGS }
     const result = reduce(state, {
       type: 'settings-changed',
-      settings: { radiusMiles: 1.5 },
+      settings: {
+        radiusMiles: 1.5,
+        categories: [...DEFAULT_SETTINGS.categories],
+        units: 'metric',
+        sort: DEFAULT_SETTINGS.sort,
+        maxResults: DEFAULT_SETTINGS.maxResults,
+        manualLocation: DEFAULT_SETTINGS.manualLocation,
+      },
     })
     expect(result.effects).toEqual([{ type: 'fetch-pois', offset: 0, mode: 'replace' }])
   })
 
-  it('re-fetches if units changes alongside another field', () => {
+  it('still re-fetches when units is unchanged but radius differs — the "full snapshot resent, only radius really changed" case', () => {
     const state = { ...INITIAL_STATE, settings: DEFAULT_SETTINGS }
     const result = reduce(state, {
       type: 'settings-changed',
-      settings: { units: 'metric', radiusMiles: 1.5 },
+      settings: {
+        radiusMiles: 1.5,
+        categories: [...DEFAULT_SETTINGS.categories],
+        units: DEFAULT_SETTINGS.units, // unchanged — a real broadcast always includes it
+        sort: DEFAULT_SETTINGS.sort,
+        maxResults: DEFAULT_SETTINGS.maxResults,
+        manualLocation: DEFAULT_SETTINGS.manualLocation,
+      },
+    })
+    expect(result.effects).toEqual([{ type: 'fetch-pois', offset: 0, mode: 'replace' }])
+  })
+
+  it('regression: skips the refetch for a bridge.ts-realistic full 6-key payload where only units differs (the old key-presence check could never do this)', () => {
+    // Non-null manualLocation and a shuffled-but-identical category set,
+    // so this exercises sameManualLocation's value comparison and
+    // sameCategories' order-independence in the exact shape bridge.ts
+    // actually sends, not a hand-crafted sparse delta.
+    const state = {
+      ...INITIAL_STATE,
+      settings: {
+        ...DEFAULT_SETTINGS,
+        manualLocation: { lat: 40.758, lng: -73.985 },
+      },
+    }
+    const result = reduce(state, {
+      type: 'settings-changed',
+      settings: {
+        radiusMiles: state.settings.radiusMiles,
+        // Same set as state.settings.categories, reversed order.
+        categories: [...state.settings.categories].reverse(),
+        units: 'metric',
+        sort: state.settings.sort,
+        maxResults: state.settings.maxResults,
+        manualLocation: { lat: 40.758, lng: -73.985 }, // new object, same values
+      },
+    })
+    expect(result.effects).toEqual([])
+    expect(result.state.settings.units).toBe('metric')
+  })
+
+  it('still re-fetches when the enabled category set actually differs, not merely reordered', () => {
+    const state = { ...INITIAL_STATE, settings: DEFAULT_SETTINGS }
+    const result = reduce(state, {
+      type: 'settings-changed',
+      settings: {
+        radiusMiles: DEFAULT_SETTINGS.radiusMiles,
+        // Genuine content change: drop 'nightlife'.
+        categories: DEFAULT_SETTINGS.categories.filter((c) => c !== 'nightlife'),
+        units: 'metric',
+        sort: DEFAULT_SETTINGS.sort,
+        maxResults: DEFAULT_SETTINGS.maxResults,
+        manualLocation: DEFAULT_SETTINGS.manualLocation,
+      },
     })
     expect(result.effects).toEqual([{ type: 'fetch-pois', offset: 0, mode: 'replace' }])
   })

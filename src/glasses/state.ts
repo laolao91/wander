@@ -179,17 +179,29 @@ export function reduce(state: AppState, event: Event): ReducerResult {
 
     case 'settings-changed': {
       // Display-only fields don't affect what gets fetched (params, sort,
-      // limit) — skip the refetch when that's the only thing that changed,
-      // to avoid a burst of redundant fetches during rapid settings
-      // changes (Wander_v2_Research.md M6). `units` is the only such
-      // field today.
-      const DISPLAY_ONLY_KEYS = new Set(['units'])
-      const changedKeys = Object.keys(event.settings)
-      const isDisplayOnlyChange =
-        changedKeys.length > 0 && changedKeys.every((k) => DISPLAY_ONLY_KEYS.has(k))
+      // limit) — skip the refetch when that's the only thing that
+      // *actually changed*, to avoid a burst of redundant fetches during
+      // rapid settings changes (Wander_v2_Research.md M6). `units` is the
+      // only such field today.
+      //
+      // This must diff *values* (current vs. next), not just check which
+      // keys are present in `event.settings` — bridge.ts's
+      // handleSettingsChanged forwards the complete Settings snapshot on
+      // every change (radiusMiles/categories are always present,
+      // unconditionally), so a key-presence check would see all 6 keys on
+      // every call and never skip the refetch in production, even when
+      // only units actually changed.
+      const nextSettings = { ...state.settings, ...event.settings }
+      const onlyUnitsChanged =
+        state.settings.units !== nextSettings.units &&
+        state.settings.radiusMiles === nextSettings.radiusMiles &&
+        sameCategories(state.settings.categories, nextSettings.categories) &&
+        state.settings.sort === nextSettings.sort &&
+        state.settings.maxResults === nextSettings.maxResults &&
+        sameManualLocation(state.settings.manualLocation, nextSettings.manualLocation)
       return {
-        state: { ...state, settings: { ...state.settings, ...event.settings } },
-        effects: isDisplayOnlyChange ? [] : [{ type: 'fetch-pois', offset: 0, mode: 'replace' }],
+        state: { ...state, settings: nextSettings },
+        effects: onlyUnitsChanged ? [] : [{ type: 'fetch-pois', offset: 0, mode: 'replace' }],
       }
     }
 
@@ -763,5 +775,31 @@ function noop(state: AppState): ReducerResult {
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(Math.max(n, lo), hi)
+}
+
+/**
+ * Order-independent set comparison for `Settings.categories`. The phone
+ * side re-appends a category to the end of `enabledCategories` when it's
+ * re-enabled (see `src/phone/state.ts`'s `toggleCategory`), rather than
+ * re-sorting into canonical order — so the same logical set of enabled
+ * categories can legitimately arrive in a different order across two
+ * `settings-changed` events. A reference/array-order comparison would
+ * treat that as a "change" and defeat the units-only fetch-skip in
+ * `reduce`'s `settings-changed` case.
+ */
+function sameCategories(a: readonly Category[], b: readonly Category[]): boolean {
+  if (a.length !== b.length) return false
+  const setA = new Set(a)
+  return b.every((c) => setA.has(c))
+}
+
+/** Value comparison for `Settings.manualLocation` (object-or-null). */
+function sameManualLocation(
+  a: { lat: number; lng: number } | null,
+  b: { lat: number; lng: number } | null,
+): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  return a.lat === b.lat && a.lng === b.lng
 }
 
