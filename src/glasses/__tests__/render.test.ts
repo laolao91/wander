@@ -282,6 +282,12 @@ describe('renderScreen POI_LIST', () => {
     const line = out.listObject?.[0].itemContainer?.itemName?.[0] ?? ''
     expect(line).toContain('264 ft') // 0.05 * 5280 = 264
   })
+
+  it('disables the firmware-native selection border — the app-drawn ">" cursor is the single source of truth', () => {
+    const out = renderScreen({ name: 'POI_LIST', pois: [makePoi()], hasMore: false })
+    const list = out.listObject?.[0]
+    expect(list?.itemContainer?.isItemSelectBorderEn).toBe(0)
+  })
 })
 
 // ─── renderScreen: POI_DETAIL ──────────────────────────────────────────

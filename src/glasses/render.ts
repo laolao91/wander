@@ -290,7 +290,13 @@ function renderPoiList(
         itemContainer: new ListItemContainerProperty({
           itemCount: items.length,
           itemWidth: 560,
-          isItemSelectBorderEn: 1,
+          // Disabled: the firmware's native selection border and this
+          // module's app-drawn "> " cursor prefix are two independent
+          // state machines that can visibly desync (see
+          // Wander_v2_Research.md M4). The app cursor is the single
+          // source of truth; the native border is redundant and can
+          // point at a different row than the ">" prefix.
+          isItemSelectBorderEn: 0,
           itemName: items,
         }),
       }),
