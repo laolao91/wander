@@ -5,6 +5,7 @@ import {
   isReconnectTransition,
   isLowBattery,
   LOW_BATTERY_THRESHOLD,
+  createInFlightGuard,
 } from '../bridge'
 import { INITIAL_STATE, type AppState, type Event } from '../state'
 import {
@@ -450,5 +451,65 @@ describe('isLowBattery', () => {
   it('false when battery is unknown (null/undefined) — never degrade on missing data', () => {
     expect(isLowBattery(null)).toBe(false)
     expect(isLowBattery(undefined)).toBe(false)
+  })
+})
+
+// ─── createInFlightGuard (M3 — minimap push serialization) ────────────
+//
+// initGlasses wires one guard instance around the NAV_ACTIVE minimap push
+// call site (pushMinimap) so an overlapping position update can't kick off
+// a second encode+BLE-send while one is already running. The guard itself
+// has all the real logic to get wrong, so it's tested here in complete
+// isolation from the SDK bridge/fetch/minimap machinery — see task-13
+// notes: the brief originally assumed bridge.test.ts already had a DI seam
+// for encodeMinimapPng/initGlasses; it doesn't, so we test the extracted
+// guard directly instead of standing up a full mocked-SDK harness.
+describe('createInFlightGuard', () => {
+  it('skips a second task while the first is still in flight', async () => {
+    const guard = createInFlightGuard()
+    let resolveFirst: () => void = () => {}
+    const first = vi.fn(() => new Promise<void>((r) => { resolveFirst = r }))
+    const second = vi.fn(async () => {})
+
+    guard.runIfIdle(first)
+    guard.runIfIdle(second) // dropped — first hasn't resolved yet
+
+    expect(first).toHaveBeenCalledTimes(1)
+    expect(second).not.toHaveBeenCalled()
+
+    resolveFirst()
+    await Promise.resolve() // let the first task's promise settle
+    await Promise.resolve() // let the .finally() microtask run and clear `busy`
+
+    guard.runIfIdle(second) // idle again — should run
+    expect(second).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs the task immediately when idle', () => {
+    const guard = createInFlightGuard()
+    const task = vi.fn(async () => {})
+    guard.runIfIdle(task)
+    expect(task).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs a third task normally once a second (skipped) attempt has come and gone', async () => {
+    // Guards against a subtle bug: a dropped call must not itself leave
+    // `busy` stuck true, and must not somehow "queue" — only genuinely
+    // idle calls run.
+    const guard = createInFlightGuard()
+    let resolveFirst: () => void = () => {}
+    const first = vi.fn(() => new Promise<void>((r) => { resolveFirst = r }))
+    const skipped = vi.fn(async () => {})
+    const third = vi.fn(async () => {})
+
+    guard.runIfIdle(first)
+    guard.runIfIdle(skipped) // dropped while first is in flight
+    resolveFirst()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    guard.runIfIdle(third)
+    expect(skipped).not.toHaveBeenCalled()
+    expect(third).toHaveBeenCalledTimes(1)
   })
 })

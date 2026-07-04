@@ -148,6 +148,10 @@ export async function initGlasses(): Promise<void> {
   // reconnect; `latestBatteryLevel` feeds the minimap's tile-skip check.
   let wasConnected: boolean | null = null
   let latestBatteryLevel: number | null = null
+  // M3 — minimap push serialization. One guard instance per initGlasses()
+  // call (not module-level) so independent bridge instances in tests don't
+  // leak in-flight state into each other.
+  const minimapPushGuard = createInFlightGuard()
 
   const runner = new EffectRunner({
     dispatch: (event) => dispatch(event),
@@ -308,7 +312,14 @@ export async function initGlasses(): Promise<void> {
       // (entry rebuild, position updates, arrival), so the user-position
       // triangle stays in sync with whatever the body text is showing.
       if (state.screen.name === 'NAV_ACTIVE') {
-        void pushMinimap(bridge, state.screen, isLowBattery(latestBatteryLevel))
+        // Capture the narrowed type in a local const — an arrow function
+        // closing over the mutable outer `let state` doesn't retain
+        // control-flow narrowing, so `state.screen` inside the closure
+        // would still be the full union type.
+        const navScreen = state.screen
+        minimapPushGuard.runIfIdle(() =>
+          pushMinimap(bridge, navScreen, isLowBattery(latestBatteryLevel)),
+        )
       }
     }
 
@@ -346,6 +357,25 @@ function pushScreen(
 }
 
 // ─── Minimap push ────────────────────────────────────────────────────────
+
+/**
+ * Runs `task` unless a previous call is still in flight — drops the new
+ * call rather than queueing it. Used to keep overlapping async pushes
+ * (e.g. minimap encode+BLE-send) from running concurrently and applying
+ * out of order. See Wander_v2_Research.md M3.
+ */
+export function createInFlightGuard() {
+  let busy = false
+  return {
+    runIfIdle(task: () => Promise<void>): void {
+      if (busy) return
+      busy = true
+      void task().finally(() => {
+        busy = false
+      })
+    },
+  }
+}
 
 /**
  * Encode the NAV_ACTIVE minimap to PNG and push it into the image
