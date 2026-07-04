@@ -25,12 +25,18 @@ export const INITIAL_STATE: PhoneState = INITIAL_PHONE_STATE
 export function reduce(state: PhoneState, event: PhoneEvent): ReduceResult {
   switch (event.type) {
     case 'settings-hydrated':
-      return noop({
-        ...state,
-        settings: event.settings,
-        // Hydration itself doesn't change sync status — it's just loading
-        // from storage, nothing needs broadcasting.
-      })
+      return {
+        state: { ...state, settings: event.settings },
+        // Broadcast (but don't persist-settings or request-location) on
+        // boot: the glasses reducer starts on DEFAULT_SETTINGS and only
+        // ever learns real settings via this CustomEvent — without it,
+        // every session runs split-brain (phone uses persisted settings,
+        // glasses use defaults) until the user changes something. See
+        // Wander_v2_Research.md H1. No persist (nothing changed, would
+        // just rewrite what we just read) and no request-location
+        // (NearbyTab's own mount effect already requests location).
+        effects: [{ type: 'broadcast-settings', settings: event.settings }],
+      }
 
     case 'radius-changed': {
       if (state.settings.radiusMiles === event.radiusMiles) return noop(state)

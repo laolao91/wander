@@ -39,14 +39,14 @@ describe('INITIAL_STATE', () => {
 // ─── Hydration ─────────────────────────────────────────────────────────
 
 describe('settings-hydrated', () => {
-  it('replaces settings without emitting effects', () => {
+  it('replaces settings and broadcasts them (no persist, no request-location)', () => {
     const hydrated: Settings = customSettings({ radiusMiles: 1.5 })
     const result = reduce(INITIAL_STATE, {
       type: 'settings-hydrated',
       settings: hydrated,
     })
     expect(result.state.settings).toEqual(hydrated)
-    expect(result.effects).toEqual([])
+    expect(result.effects.map((e) => e.type)).toEqual(['broadcast-settings'])
   })
 
   it('does not disturb in-flight sync status', () => {
@@ -56,6 +56,26 @@ describe('settings-hydrated', () => {
       settings: DEFAULT_SETTINGS,
     })
     expect(result.state.syncStatus).toBe('syncing')
+  })
+
+  it('broadcasts hydrated settings so the glasses learn them at boot', () => {
+    const loaded = {
+      radiusMiles: 1.5 as const,
+      enabledCategories: ['historic'] as const,
+      units: 'metric' as const,
+      sort: 'name' as const,
+      maxResults: 10 as const,
+      manualLocation: null,
+    }
+    const result = reduce(INITIAL_STATE, { type: 'settings-hydrated', settings: loaded })
+    const broadcast = result.effects.find((e) => e.type === 'broadcast-settings')
+    expect(broadcast).toBeDefined()
+    if (broadcast?.type === 'broadcast-settings') {
+      expect(broadcast.settings).toEqual(loaded)
+    }
+    // Hydration should NOT trigger a relocate/refetch — the phone doesn't
+    // need to re-request location just because it loaded settings from disk.
+    expect(result.effects.some((e) => e.type === 'request-location')).toBe(false)
   })
 })
 

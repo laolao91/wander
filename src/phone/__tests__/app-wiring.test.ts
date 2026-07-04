@@ -79,12 +79,12 @@ describe('boot sequence: loadSettings → settings-hydrated', () => {
     expect(state.settings).toEqual(DEFAULT_SETTINGS)
   })
 
-  it('hydration does not emit any effects (no persist/broadcast on boot)', async () => {
+  it('hydration broadcasts settings but does not persist or request-location', async () => {
     const kv = createMemoryKVStore()
     const loaded = await loadSettings(kv)
     const result = reduce(INITIAL_STATE, { type: 'settings-hydrated', settings: loaded })
 
-    expect(result.effects).toEqual([])
+    expect(result.effects.map((e) => e.type)).toEqual(['broadcast-settings'])
   })
 
   it('syncStatus stays idle after hydration', async () => {
@@ -265,12 +265,13 @@ describe('broadcast-settings effect', () => {
     }
   })
 
-  it('is NOT emitted on settings-hydrated (boot is not a change)', () => {
+  it('IS emitted on settings-hydrated (glasses must learn persisted settings at boot)', () => {
     const result = reduce(INITIAL_STATE, {
       type: 'settings-hydrated',
       settings: { radiusMiles: 1.5, enabledCategories: [], units: 'imperial', sort: 'proximity', maxResults: 20, manualLocation: null },
     })
     const types = result.effects.map((e) => e.type)
-    expect(types).not.toContain('broadcast-settings')
+    expect(types).toContain('broadcast-settings')
+    expect(types).not.toContain('request-location')
   })
 })
